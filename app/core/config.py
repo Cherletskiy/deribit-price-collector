@@ -21,6 +21,7 @@ class Config:
 
     # Deribit
     DERIBIT_API_BASE_URL: str = os.getenv("DERIBIT_API_BASE_URL", "https://www.deribit.com/api/v2")
+    PRICE_FETCH_INTERVAL_SEC: int = int(os.getenv("PRICE_FETCH_INTERVAL", 60))
 
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
