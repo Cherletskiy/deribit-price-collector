@@ -5,7 +5,7 @@ from typing import List, Literal
 from celery import Celery
 
 from app.core.config import Config
-from app.core.db import SessionLocal
+from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
 from app.repositories import PriceRepository
 from collector.client import DeribitClient
@@ -69,7 +69,7 @@ def fetch_prices_task(self) -> None:
     """
     logger.info("Starting price collection task")
 
-    with SessionLocal() as session:
+    with SyncSessionLocal() as session:
         repo = PriceRepository(session)
 
         try:
