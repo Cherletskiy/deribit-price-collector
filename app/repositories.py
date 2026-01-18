@@ -1,6 +1,8 @@
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
 from app.models import Price
 
 
@@ -32,3 +34,13 @@ class AsyncPriceRepository:
         stmt = stmt.order_by(Price.timestamp.asc())
         result = await self.session.scalars(stmt)
         return list(result.all())
+
+
+class SyncPriceRepository:
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save_price(self, ticker: str, price: Decimal, timestamp: int) -> Price:
+        obj = Price(ticker=ticker, price=price, timestamp=timestamp)
+        self.session.add(obj)
+        return obj

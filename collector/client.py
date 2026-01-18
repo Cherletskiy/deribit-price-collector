@@ -67,7 +67,10 @@ class DeribitClient:
             if price is None:
                 raise ValueError(f"Missing 'index_price' in result: {result}")
 
-            us_in = result.get("usIn")
+            us_in = data.get("usIn")
+            if us_in is None:
+                raise ValueError(f"Missing 'usIn' in response: {data}")
+
             timestamp = int(us_in / 1_000_000)
 
             price_decimal = Decimal(str(price))

@@ -7,7 +7,7 @@ from celery import Celery
 from app.core.config import Config
 from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
-from app.repositories import PriceRepository
+from app.repositories import SyncPriceRepository
 from collector.client import DeribitClient
 
 
@@ -34,7 +34,7 @@ celery_app.conf.beat_schedule = {
 
 async def _fetch_prices_async(
     tickers: List[Ticker],
-    repo: PriceRepository,
+    repo: SyncPriceRepository,
 ) -> None:
     """
     Асинхронно получает цены из Deribit и сохраняет их в БД.
@@ -42,11 +42,7 @@ async def _fetch_prices_async(
     async with DeribitClient() as client:
         for ticker in tickers:
             try:
-                price, timestamp = await client.get_index_price(ticker)
-
-                if not timestamp:
-                    logger.warning(f"Failed to fetch timestamp for {ticker}, using current time")
-                    timestamp = int(datetime.now(timezone.utc).timestamp())
+                price, timestamp = await client.get_index_price_time(ticker)
 
                 repo.save_price(
                     ticker=ticker,
@@ -70,7 +66,7 @@ def fetch_prices_task(self) -> None:
     logger.info("Starting price collection task")
 
     with SyncSessionLocal() as session:
-        repo = PriceRepository(session)
+        repo = SyncPriceRepository(session)
 
         try:
             asyncio.run(_fetch_prices_async(TICKERS, repo))
