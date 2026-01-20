@@ -2,7 +2,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, field_validator,
+                      model_validator)
+
+from app.repositories import SortOrder
 
 
 class PriceResponse(BaseModel):
@@ -17,13 +20,29 @@ class PriceResponse(BaseModel):
     )
 
 
+class PaginationSortQuery(BaseModel):
+    """Базовая схема пагинации"""
+
+    limit: int = Field(50, ge=1, le=1000, description="Количество записей (1–1000)")
+    offset: int = Field(0, ge=0, description="Смещение от начала")
+    sorting: SortOrder = Field(SortOrder.ASC, description="Порядок сортировки")
+
+
 class TickerQuery(BaseModel):
-    """Базовая схема для запросов с тикером"""
+    """Базовая схема для запросов с тикером (без пагинации)"""
 
     ticker: Literal["btc_usd", "eth_usd"]
 
 
-class PriceByDateQuery(TickerQuery):
+class TickerWithPaginationQuery(PaginationSortQuery, TickerQuery):
+    """Схема с тикером и пагинацией"""
+
+    pass
+
+
+class PriceByDateQuery(TickerWithPaginationQuery):
+    """Схема для запроса с временным диапазоном"""
+
     timestamp_from: int | None = None
     timestamp_to: int | None = None
 

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,26 +6,37 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.repositories import SortOrder
 
 
 # Фикстуры для моков
 @pytest.fixture
 def mock_price_data():
-    """Фиктивные данные о ценах"""
-    return [
-        {
+    """Фиктивные данные о ценах (10 записей для тестирования пагинации)"""
+    base_date = datetime(2021, 1, 1, 0, 0, 0)
+    prices = []
+
+    # Создаем 10 записей с разными датами и ценами
+    for i in range(10):
+        price_data = {
             "ticker": "btc_usd",
-            "price": Decimal("50000.00"),
-            "timestamp": 1609459200,  # 2021-01-01
-            "created_at": datetime(2021, 1, 1, 0, 0, 0),
-        },
-        {
-            "ticker": "btc_usd",
-            "price": Decimal("51000.00"),
-            "timestamp": 1609545600,  # 2021-01-02
-            "created_at": datetime(2021, 1, 2, 0, 0, 0),
-        },
-    ]
+            "price": Decimal(f"{50000 + i * 1000}.00"),  # 50000, 51000, 52000...
+            "timestamp": int((base_date + timedelta(days=i)).timestamp()),
+            "created_at": base_date + timedelta(days=i),
+        }
+        prices.append(price_data)
+
+    # Добавляем еще 5 записей для другого тикера
+    for i in range(5):
+        price_data = {
+            "ticker": "eth_usd",
+            "price": Decimal(f"{3000 + i * 100}.00"),  # 3000, 3100, 3200...
+            "timestamp": int((base_date + timedelta(days=i)).timestamp()),
+            "created_at": base_date + timedelta(days=i),
+        }
+        prices.append(price_data)
+
+    return prices
 
 
 @pytest.fixture
@@ -44,44 +55,71 @@ def mock_price_models(mock_price_data):
 
 @pytest.fixture
 def mock_price_repository(mock_price_models):
-    """Мок репозитория"""
+    """Мок репозитория с поддержкой пагинации и сортировки"""
     repository = AsyncMock()
 
-    repository.get_all_by_ticker = AsyncMock(return_value=mock_price_models)
-    repository.get_latest_by_ticker = AsyncMock(return_value=mock_price_models[-1])
-    repository.get_by_ticker_and_date_range = AsyncMock(
-        return_value=mock_price_models[0:1]
+    # Фильтруем модели по тикеру
+    btc_models = [m for m in mock_price_models if m.ticker == "btc_usd"]
+    eth_models = [m for m in mock_price_models if m.ticker == "eth_usd"]
+
+    # Методы с параметрами пагинации
+    def get_all_by_ticker_side_effect(
+        ticker, limit=50, offset=0, sorting=SortOrder.ASC
+    ):
+        models = btc_models if ticker == "btc_usd" else eth_models
+
+        # Применяем сортировку
+        if sorting == SortOrder.DESC:
+            models = sorted(models, key=lambda x: x.timestamp, reverse=True)
+        else:
+            models = sorted(models, key=lambda x: x.timestamp)
+
+        # Применяем пагинацию
+        return models[offset : offset + limit]
+
+    def get_by_ticker_and_date_range_side_effect(
+        ticker,
+        timestamp_from=None,
+        timestamp_to=None,
+        limit=50,
+        offset=0,
+        sorting=SortOrder.ASC,
+    ):
+        models = btc_models if ticker == "btc_usd" else eth_models
+
+        # Фильтрация по дате
+        if timestamp_from is not None:
+            models = [m for m in models if m.timestamp >= timestamp_from]
+        if timestamp_to is not None:
+            models = [m for m in models if m.timestamp <= timestamp_to]
+
+        # Сортировка
+        if sorting == SortOrder.DESC:
+            models = sorted(models, key=lambda x: x.timestamp, reverse=True)
+        else:
+            models = sorted(models, key=lambda x: x.timestamp)
+
+        # Пагинация
+        return models[offset : offset + limit]
+
+    # Настраиваем моки с side_effect для более реалистичного поведения
+    repository.get_all_by_ticker.side_effect = get_all_by_ticker_side_effect
+    repository.get_latest_by_ticker.side_effect = lambda ticker: (
+        sorted(
+            [m for m in mock_price_models if m.ticker == ticker],
+            key=lambda x: x.timestamp,
+            reverse=True,
+        )[0]
+        if any(m.ticker == ticker for m in mock_price_models)
+        else None
+    )
+    repository.get_by_ticker_and_date_range.side_effect = (
+        get_by_ticker_and_date_range_side_effect
     )
 
     return repository
 
 
-@pytest.fixture
-def client(mock_price_repository):
-    """Тестовый клиент с подменой зависимостей"""
-    # Патчим репозиторий в сервисе
-    with patch("app.services.PriceService") as MockService:
-        mock_service_instance = AsyncMock()
-
-        # Создаем моки для методов сервиса
-        mock_service_instance.get_all_prices = AsyncMock(
-            return_value=mock_price_repository.get_all_by_ticker.return_value
-        )
-        mock_service_instance.get_latest_price = AsyncMock(
-            return_value=mock_price_repository.get_latest_by_ticker.return_value
-        )
-        mock_service_instance.get_prices_by_date_range = AsyncMock(
-            return_value=mock_price_repository.get_by_ticker_and_date_range.return_value
-        )
-
-        MockService.return_value = mock_service_instance
-
-        # Создаем TestClient
-        with TestClient(app) as test_client:
-            yield test_client
-
-
-# Альтернативная фикстура, если нужно патчить репозиторий напрямую
 @pytest.fixture
 def client_direct_mock(mock_price_repository):
     """Клиент с прямым моком репозитория в эндпоинтах"""

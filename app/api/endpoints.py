@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_async_session
 from app.repositories import AsyncPriceRepository
-from app.schemas import PriceByDateQuery, PriceResponse, TickerQuery
+from app.schemas import (PriceByDateQuery, PriceResponse, TickerQuery,
+                         TickerWithPaginationQuery)
 from app.services import PriceService
 
 router = APIRouter(prefix="/api/v1", tags=["prices"])
@@ -11,17 +12,25 @@ router = APIRouter(prefix="/api/v1", tags=["prices"])
 
 @router.get("/prices")
 async def get_all_prices(
-    query: TickerQuery = Depends(),
+    query: TickerWithPaginationQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[PriceResponse]:
     """
-    Получение всех сохранённых данных по указанной валюте.
+    Получение данных по указанной валюте с пагинацией и сортировкой.
     """
     repo = AsyncPriceRepository(db)
     service = PriceService(repo)
-    prices = await service.get_all_prices(query.ticker)
+
+    prices = await service.get_all_prices(
+        ticker=query.ticker,
+        limit=query.limit,
+        offset=query.offset,
+        sorting=query.sorting,
+    )
+
     if not prices:
         raise HTTPException(status_code=404, detail="No data found for this ticker")
+
     return [PriceResponse.model_validate(price) for price in prices]
 
 
@@ -47,15 +56,21 @@ async def get_prices_by_date(
     db: AsyncSession = Depends(get_async_session),
 ) -> list[PriceResponse]:
     """
-    Получение цены валюты с фильтром по дате (UNIX timestamp).
+    Получение цены валюты с фильтром по дате, пагинацией и сортировкой.
     """
     repo = AsyncPriceRepository(db)
     service = PriceService(repo)
+
     prices = await service.get_prices_by_date_range(
         ticker=query.ticker,
         timestamp_from=query.timestamp_from,
         timestamp_to=query.timestamp_to,
+        limit=query.limit,
+        offset=query.offset,
+        sorting=query.sorting,
     )
+
     if not prices:
         raise HTTPException(status_code=404, detail="No data found for this query")
+
     return [PriceResponse.model_validate(price) for price in prices]
