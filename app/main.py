@@ -1,9 +1,12 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from app.api.endpoints import router
-from app.core.logging_config import setup_logger
-from app.core.db import init_db, close_db
 
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from pydantic_core import ValidationError
+
+from app.api.endpoints import router
+from app.core.db import close_db, init_db
+from app.core.logging_config import setup_logger
 
 logger = setup_logger(__name__)
 
@@ -30,5 +33,18 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(ValidationError)
+async def validation_exception_handler(request: Request, exc: ValidationError):
+    errors = exc.errors(include_url=False)
+    for error in errors:
+        if "ctx" in error and "error" in error["ctx"]:
+            error["ctx"]["error"] = str(error["ctx"]["error"])
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors},
+    )
+
 
 app.include_router(router)
