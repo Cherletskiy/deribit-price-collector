@@ -17,11 +17,6 @@ class AsyncPriceRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def save_price(self, ticker: str, price: Decimal, timestamp: int) -> Price:
-        price_obj = Price(ticker=ticker, price=price, timestamp=timestamp)
-        self.session.add(price_obj)
-        return price_obj
-
     async def get_all_by_ticker(
         self,
         ticker: str,
