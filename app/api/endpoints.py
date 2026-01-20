@@ -22,7 +22,7 @@ async def get_all_prices(
     prices = await service.get_all_prices(ticker)
     if not prices:
         raise HTTPException(status_code=404, detail="No data found for this ticker")
-    return [PriceResponse.from_orm(price) for price in prices]
+    return [PriceResponse.model_validate(price) for price in prices]
 
 
 @router.get("/prices/latest")
@@ -38,7 +38,7 @@ async def get_latest_price(
     price = await service.get_latest_price(ticker)
     if price is None:
         raise HTTPException(status_code=404, detail="No data found for this ticker")
-    return PriceResponse.from_orm(price)
+    return PriceResponse.model_validate(price)
 
 
 @router.get("/prices/by-date")
@@ -80,4 +80,4 @@ async def get_prices_by_date(
     )
     if not prices:
         raise HTTPException(status_code=404, detail="No data found for this query")
-    return [PriceResponse.from_orm(price) for price in prices]
+    return [PriceResponse.model_validate(price) for price in prices]
