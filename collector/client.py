@@ -71,7 +71,10 @@ class DeribitClient:
             if us_in is None:
                 raise ValueError(f"Missing 'usIn' in response: {data}")
 
-            timestamp = int(us_in / 1_000_000)
+            if not isinstance(us_in, int) or us_in <= 0:
+                raise ValueError(f"Invalid 'usIn' value: expected positive integer, got {us_in}")
+
+            timestamp = int(us_in // 1_000_000)
 
             price_decimal = Decimal(str(price))
             logger.debug(f"Fetched index price for {ticker}: {price_decimal}")
