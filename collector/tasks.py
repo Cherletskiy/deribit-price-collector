@@ -65,30 +65,43 @@ def dispatch_price_batches() -> None:
 )
 def fetch_price_batch(tickers: list[str]) -> None:
     """
-    Обработка одного батча тикеров.
+    Обработка одного батча тикеров с частичным успехом:
+    ошибка при обработке одного тикера не прерывает обработку остальных.
     """
-    logger.debug(f"Starting price batch tickers: {tickers}")
+    logger.debug(f"Starting price batch | tickers: {tickers}")
 
     client = SyncDeribitClient()
     session = SyncSessionLocal()
+    success_count = 0
+    failed_tickers = []
 
     try:
         repo = SyncPriceRepository(session)
+
         for ticker in tickers:
-            price, timestamp = client.get_index_price_time(ticker)
-            repo.save_price(
-                ticker=ticker,
-                price=price,
-                timestamp=timestamp,
+            try:
+                price, timestamp = client.get_index_price_time(ticker)
+                repo.save_price(ticker=ticker, price=price, timestamp=timestamp)
+                success_count += 1
+                logger.debug(f"Saved price for {ticker}: {price} at {timestamp}")
+            except Exception as e:
+                failed_tickers.append(ticker)
+                logger.error(f"Failed to process ticker '{ticker}': {e}")
+
+        if success_count > 0:
+            session.commit()
+            logger.info(
+                f"Price batch partially/completely succeeded | "
+                f"success: {success_count}, failed: {len(failed_tickers)} | "
+                f"failed_tickers: {failed_tickers}"
             )
-
-        session.commit()
-
-        logger.debug(f"Price batch completed | tickers: {tickers}")
+        else:
+            session.rollback()
+            logger.warning(f"All tickers in batch failed: {tickers}")
+            raise Exception(f"All tickers failed: {failed_tickers}")
 
     except Exception:
-        session.rollback()
-        logger.exception(f"Price batch failed | tickers: {tickers}")
+        logger.exception(f"Price batch failed completely | tickers: {tickers}")
         raise
 
     finally:
