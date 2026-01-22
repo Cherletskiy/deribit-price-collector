@@ -37,7 +37,7 @@ class SyncDeribitClient:
         params = {"index_name": ticker}
 
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=config.DERIBIT_API_TIMEOUT_SEC)
             response.raise_for_status()
             data = response.json()
             logger.info(

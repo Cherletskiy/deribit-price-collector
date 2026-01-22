@@ -17,6 +17,7 @@ class Config(BaseSettings):
 
     # Deribit
     DERIBIT_API_BASE_URL: str = Field(default="https://www.deribit.com/api/v2")
+    DERIBIT_API_TIMEOUT_SEC: int = Field(default=10)
     PRICE_FETCH_INTERVAL_SEC: int = Field(default=60)
     PRICE_BATCH_SIZE: int = Field(default=5)
     TICKERS: Json[list[str]] = Field(default=["btc_usd", "eth_usd"])
