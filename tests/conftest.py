@@ -3,13 +3,114 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy import StaticPool, create_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
+from app.core.db import Base
 from app.main import app
-from app.repositories import SortOrder
+from app.models import Price
+from app.repositories import AsyncPriceRepository, SortOrder
 
 
 # Фикстуры для моков
+@pytest_asyncio.fixture()
+async def async_engine():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        echo=False,
+    )
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def create_db_schema(async_engine):
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def async_session(async_engine):
+    session_maker = async_sessionmaker(
+        async_engine,
+        expire_on_commit=False,
+    )
+
+    async with session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def test_async_price_repository(async_session):
+    return AsyncPriceRepository(async_session)
+
+
+@pytest_asyncio.fixture
+async def sample_price_data(async_session):
+    prices = [
+        Price(
+            ticker="btc_usd",
+            price=Decimal("45000.50"),
+            timestamp=1700000000,
+        ),
+        Price(
+            ticker="btc_usd",
+            price=Decimal("45500.75"),
+            timestamp=1700000100,
+        ),
+        Price(
+            ticker="eth_usd",
+            price=Decimal("3200.25"),
+            timestamp=1700000050,
+        ),
+    ]
+
+    async_session.add_all(prices)
+    await async_session.commit()
+
+    return prices
+
+
+@pytest.fixture
+def sync_engine():
+    """
+    Синхронный движок для SQLite.
+    StaticPool - чтобы БД в памяти жила всё время теста.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    yield engine
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def test_db_sync_session(sync_engine):
+    """
+    Синхронная сессия для интеграционных тестов
+    """
+    Session = sessionmaker(bind=sync_engine, expire_on_commit=False)
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
+
+
 @pytest.fixture
 def mock_price_data():
     """Фиктивные данные о ценах (10 записей для тестирования пагинации)"""

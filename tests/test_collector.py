@@ -1,8 +1,8 @@
 from decimal import Decimal
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
-import pytest
 import httpx
+import pytest
 
 from collector.tasks import SyncDeribitClient, chunked, fetch_price_batch
 
@@ -16,7 +16,7 @@ class TestSyncDeribitClient:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "usIn": 1_769_082_445_362_975,
-            "result": {"index_price": "42500.50"}
+            "result": {"index_price": "42500.50"},
         }
         mock_http_client.get.return_value = mock_response
 
@@ -33,7 +33,7 @@ class TestSyncDeribitClient:
         # Проверяем вызов httpx
         mock_http_client.get.assert_called_once_with(
             f"{client.BASE_URL}/public/get_index_price",
-            params={"index_name": "btc_usd"}
+            params={"index_name": "btc_usd"},
         )
 
     def test_raises_on_invalid_ticker(self):
@@ -77,7 +77,7 @@ class TestSyncDeribitClient:
 class TestFetchPriceBatch:
     def test_fetch_price_batch_all_success(self):
         """Все тикеры успешно обработаны"""
-        with patch('collector.tasks.SyncDeribitClient') as MockClient:
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = [
                 (Decimal("50000"), 1234567890),
@@ -87,14 +87,18 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch('collector.tasks.SyncSessionLocal', return_value=mock_session), \
-                    patch('collector.tasks.SyncPriceRepository', return_value=mock_repo), \
-                    patch('collector.tasks.httpx.Client') as MockHttpClient:
+            with patch(
+                "collector.tasks.SyncSessionLocal", return_value=mock_session
+            ), patch(
+                "collector.tasks.SyncPriceRepository", return_value=mock_repo
+            ), patch(
+                "collector.tasks.httpx.Client"
+            ) as MockHttpClient:
                 # Мокаем httpx.Client контекстный менеджер
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
-                fetch_price_batch(['btc_usd', 'eth_usd'])
+                fetch_price_batch(["btc_usd", "eth_usd"])
 
                 # Проверяем:
                 assert mock_client.get_index_price_time.call_count == 2
@@ -106,7 +110,7 @@ class TestFetchPriceBatch:
 
     def test_fetch_price_batch_partial_success(self):
         """При ошибке одного тикера остальные сохраняются"""
-        with patch('collector.tasks.SyncDeribitClient') as MockClient:
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             # Первый успешен, второй падает
             mock_client.get_index_price_time.side_effect = [
@@ -117,15 +121,19 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch('collector.tasks.SyncSessionLocal', return_value=mock_session), \
-                    patch('collector.tasks.SyncPriceRepository', return_value=mock_repo), \
-                    patch('collector.tasks.httpx.Client') as MockHttpClient:
+            with patch(
+                "collector.tasks.SyncSessionLocal", return_value=mock_session
+            ), patch(
+                "collector.tasks.SyncPriceRepository", return_value=mock_repo
+            ), patch(
+                "collector.tasks.httpx.Client"
+            ) as MockHttpClient:
                 # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
                 # Вызываем
-                fetch_price_batch(['btc_usd', 'eth_usd'])
+                fetch_price_batch(["btc_usd", "eth_usd"])
 
                 # Проверяем:
                 # 1. Оба тикера были обработаны
@@ -133,9 +141,7 @@ class TestFetchPriceBatch:
 
                 # 2. Успешный тикер сохранен
                 mock_repo.save_price.assert_called_once_with(
-                    ticker='btc_usd',
-                    price=Decimal("50000"),
-                    timestamp=1234567890
+                    ticker="btc_usd", price=Decimal("50000"), timestamp=1234567890
                 )
 
                 # 3. Commit был (т.к. есть успехи)
@@ -146,23 +152,27 @@ class TestFetchPriceBatch:
 
     def test_fetch_price_batch_all_failed(self):
         """Если все тикеры упали - rollback и исключение"""
-        with patch('collector.tasks.SyncDeribitClient') as MockClient:
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = Exception("API down")
             MockClient.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch('collector.tasks.SyncSessionLocal', return_value=mock_session), \
-                    patch('collector.tasks.SyncPriceRepository', return_value=mock_repo), \
-                    patch('collector.tasks.httpx.Client') as MockHttpClient:
+            with patch(
+                "collector.tasks.SyncSessionLocal", return_value=mock_session
+            ), patch(
+                "collector.tasks.SyncPriceRepository", return_value=mock_repo
+            ), patch(
+                "collector.tasks.httpx.Client"
+            ) as MockHttpClient:
                 # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
                 # Ожидаем исключение
                 with pytest.raises(Exception, match="All tickers failed"):
-                    fetch_price_batch(['btc_usd', 'eth_usd'])
+                    fetch_price_batch(["btc_usd", "eth_usd"])
 
                 # Проверяем:
                 # 1. Оба тикера пытались обработаться
