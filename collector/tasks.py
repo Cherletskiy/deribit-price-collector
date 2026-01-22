@@ -1,6 +1,7 @@
 from itertools import islice
 from typing import Iterable
 
+import httpx
 from celery import Celery
 
 from app.core.config import config
@@ -65,12 +66,11 @@ def dispatch_price_batches() -> None:
 )
 def fetch_price_batch(tickers: list[str]) -> None:
     """
-    Обработка одного батча тикеров с частичным успехом:
-    ошибка при обработке одного тикера не прерывает обработку остальных.
+    Обработка одного батча тикеров.
+    Использует один HTTP-клиент на весь батч для connection pooling.
     """
-    logger.debug(f"Starting price batch | tickers: {tickers}")
+    logger.info("Starting price batch | size=%d", len(tickers))
 
-    client = SyncDeribitClient()
     session = SyncSessionLocal()
     success_count = 0
     failed_tickers = []
@@ -78,31 +78,47 @@ def fetch_price_batch(tickers: list[str]) -> None:
     try:
         repo = SyncPriceRepository(session)
 
-        for ticker in tickers:
-            try:
-                price, timestamp = client.get_index_price_time(ticker)
-                repo.save_price(ticker=ticker, price=price, timestamp=timestamp)
-                success_count += 1
-                logger.debug(f"Saved price for {ticker}: {price} at {timestamp}")
-            except Exception as e:
-                failed_tickers.append(ticker)
-                logger.error(f"Failed to process ticker '{ticker}': {e}")
+        # Один HTTP-клиент на весь batch для connection pooling
+        with httpx.Client(timeout=config.DERIBIT_API_TIMEOUT_SEC) as http_client:
+            client = SyncDeribitClient(http_client)
 
+            for ticker in tickers:
+                try:
+                    price, timestamp = client.get_index_price_time(ticker)
+                    repo.save_price(ticker=ticker, price=price, timestamp=timestamp)
+                    success_count += 1
+
+                    logger.debug(
+                        "Saved price | ticker=%s | price=%s | timestamp=%s",
+                        ticker,
+                        price,
+                        timestamp,
+                    )
+
+                except Exception as exc:
+                    failed_tickers.append((ticker, str(exc)))
+                    logger.error(
+                        "Failed to process ticker | ticker=%s | error=%s",
+                        ticker,
+                        exc,
+                    )
+
+        # Commit только если есть успешные сохранения
         if success_count > 0:
             session.commit()
             logger.info(
-                f"Price batch partially/completely succeeded | "
-                f"success: {success_count}, failed: {len(failed_tickers)} | "
-                f"failed_tickers: {failed_tickers}"
+                "Batch completed | success=%d | failed=%d | failed_tickers=%s",
+                success_count,
+                len(failed_tickers),
+                [t[0] for t in failed_tickers],
             )
         else:
             session.rollback()
-            logger.warning(f"All tickers in batch failed: {tickers}")
-            raise Exception(f"All tickers failed: {failed_tickers}")
+            logger.warning("All tickers failed | tickers=%s", tickers)
+            raise Exception(f"All tickers failed: {[t[0] for t in failed_tickers]}")
 
     except Exception:
-        logger.exception(f"Price batch failed completely | tickers: {tickers}")
+        logger.exception("Batch failed | tickers=%s", tickers)
         raise
-
     finally:
         session.close()

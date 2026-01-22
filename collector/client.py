@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-import requests
+import httpx
 
 from app.core.config import config
 from app.core.logging_config import setup_logger
@@ -11,44 +11,53 @@ logger = setup_logger(__name__)
 class SyncDeribitClient:
     """
     Синхронный клиент для Deribit API.
-    Поддерживает получение index price для BTC и ETH.
+    Использует переданный httpx.Client для всех запросов (shared connection pool).
+
+    Args:
+        http_client: httpx.Client instance to use for HTTP requests
     """
 
     BASE_URL = config.DERIBIT_API_BASE_URL.rstrip("/")
+
+    def __init__(self, http_client: httpx.Client):
+        self._client = http_client
 
     def get_index_price_time(self, ticker: str) -> tuple[Decimal, int]:
         """
         Получает текущую индексную цену для указанного тикера.
 
         Args:
-            ticker (Literal["btc_usd", "eth_usd"]): тикер валюты
+            ticker: один из config.TICKERS
 
         Returns:
-            Tuple[Decimal, int]: (price, timestamp)
+            tuple: Decimal, timestamp: int)
 
         Raises:
             ValueError: если тикер не поддерживается или ответ некорректный
-            requests.RequestException: ошибки сети
+            httpx.HTTPError: ошибки сети / HTTP
         """
-        if ticker not in ["btc_usd", "eth_usd"]:
-            raise ValueError(f"Unsupported ticker: {ticker}")
+        if ticker not in config.TICKERS:
+            raise ValueError(f"Unsupported ticker: {ticker}. Must be one of: {config.TICKERS}")
 
         url = f"{self.BASE_URL}/public/get_index_price"
         params = {"index_name": ticker}
 
         try:
-            response = requests.get(url, params=params, timeout=config.DERIBIT_API_TIMEOUT_SEC)
+            response = self._client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
+
             logger.info(
-                f"GET {self.BASE_URL}/public/get_index_price | ticker: {ticker} | status: {response.status_code}"
+                "GET %s | ticker=%s | status=%s",
+                url,
+                ticker,
+                response.status_code,
             )
 
+            # Validate response structure
             result = data.get("result")
             if result is None:
-                raise ValueError(
-                    f"Unexpected response format: missing 'result' in {data}"
-                )
+                raise ValueError(f"Missing 'result' field in API response: {data}")
 
             price = result.get("index_price")
             if price is None:
@@ -58,13 +67,29 @@ class SyncDeribitClient:
             if us_in is None:
                 raise ValueError(f"Missing 'usIn' in response: {data}")
 
-            # Конвертируем микросекунды в секунды
             timestamp = us_in // 1_000_000
-
             price_decimal = Decimal(str(price))
+
+            logger.debug(
+                "Fetched price | ticker=%s | price=%s | timestamp=%s",
+                ticker,
+                price_decimal,
+                timestamp,
+            )
 
             return price_decimal, timestamp
 
-        except (requests.RequestException, ValueError, KeyError) as e:
-            logger.error(f"Failed to fetch index price for {ticker}: {e}")
+        except httpx.HTTPError as exc:
+            logger.error(
+                "HTTP error fetching price | ticker=%s | error=%s",
+                ticker,
+                exc,
+            )
             raise
+        except (ValueError, KeyError) as exc:
+            logger.error(
+                "Response parsing error | ticker=%s | error=%s",
+                ticker,
+                exc,
+            )
+            raise ValueError(f"Failed to parse API response for {ticker}: {exc}") from exc
