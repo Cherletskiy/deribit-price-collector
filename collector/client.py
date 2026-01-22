@@ -1,11 +1,9 @@
 from decimal import Decimal
-from typing import Literal
 
 import requests
 
 from app.core.config import Config
 from app.core.logging_config import setup_logger
-
 
 logger = setup_logger(__name__)
 
@@ -18,9 +16,7 @@ class SyncDeribitClient:
 
     BASE_URL = Config.DERIBIT_API_BASE_URL.rstrip("/")
 
-    def get_index_price_time(
-        self, ticker: Literal["btc_usd", "eth_usd"]
-    ) -> tuple[Decimal, int]:
+    def get_index_price_time(self, ticker: str) -> tuple[Decimal, int]:
         """
         Получает текущую индексную цену для указанного тикера.
 
@@ -44,6 +40,9 @@ class SyncDeribitClient:
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
+            logger.info(
+                f"GET {self.BASE_URL}/public/get_index_price | ticker: {ticker} | status: {response.status_code}"
+            )
 
             result = data.get("result")
             if result is None:
@@ -63,9 +62,7 @@ class SyncDeribitClient:
             timestamp = us_in // 1_000_000
 
             price_decimal = Decimal(str(price))
-            logger.debug(
-                f"Fetched index price for {ticker}: {price_decimal} at {timestamp}"
-            )
+
             return price_decimal, timestamp
 
         except (requests.RequestException, ValueError, KeyError) as e:

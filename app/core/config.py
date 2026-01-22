@@ -21,7 +21,9 @@ class Config:
 
     # Deribit
     DERIBIT_API_BASE_URL: str = os.getenv("DERIBIT_API_BASE_URL", "https://www.deribit.com/api/v2")
-    PRICE_FETCH_INTERVAL_SEC: int = int(os.getenv("PRICE_FETCH_INTERVAL", 60))
+    PRICE_FETCH_INTERVAL_SEC: int = int(os.getenv("PRICE_FETCH_INTERVAL_SEC", 60))
+    PRICE_BATCH_SIZE: int = int(os.getenv("PRICE_BATCH_SIZE", 5))
+    TICKERS: list[str] = list(os.getenv("TICKERS", "btc_usd,eth_usd").split(","))
 
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
