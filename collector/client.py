@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import requests
 
-from app.core.config import Config
+from app.core.config import config
 from app.core.logging_config import setup_logger
 
 logger = setup_logger(__name__)
@@ -14,7 +14,7 @@ class SyncDeribitClient:
     Поддерживает получение index price для BTC и ETH.
     """
 
-    BASE_URL = Config.DERIBIT_API_BASE_URL.rstrip("/")
+    BASE_URL = config.DERIBIT_API_BASE_URL.rstrip("/")
 
     def get_index_price_time(self, ticker: str) -> tuple[Decimal, int]:
         """

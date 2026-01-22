@@ -1,9 +1,10 @@
-import pytest
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-from app.core.config import Config
-from collector.tasks import SyncDeribitClient, fetch_price_batch, chunked
+import pytest
+
+from app.core.config import config
+from collector.tasks import SyncDeribitClient, chunked, fetch_price_batch
 
 
 class TestSyncDeribitClient:
@@ -11,15 +12,13 @@ class TestSyncDeribitClient:
         """Клиент корректно парсит ответ Deribit API"""
         client = SyncDeribitClient()
 
-        with patch('requests.get') as mock_get:
+        with patch("requests.get") as mock_get:
             # Мокаем успешный ответ API
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "usIn": 1769082445362975,  # микросекунды
-                "result": {
-                    "index_price": "42500.50"
-                }
+                "result": {"index_price": "42500.50"},
             }
             mock_get.return_value = mock_response
 
@@ -30,9 +29,9 @@ class TestSyncDeribitClient:
             assert price == Decimal("42500.50")
             assert timestamp == 1769082445  # секунды (usIn // 1_000_000)
             mock_get.assert_called_once_with(
-                f"{Config.DERIBIT_API_BASE_URL.rstrip('/')}/public/get_index_price",
+                f"{config.DERIBIT_API_BASE_URL.rstrip('/')}/public/get_index_price",
                 params={"index_name": "btc_usd"},
-                timeout=10
+                timeout=10,
             )
 
     def test_raises_on_invalid_ticker(self):
@@ -44,7 +43,7 @@ class TestSyncDeribitClient:
 class TestFetchPriceBatch:
     def test_fetch_price_batch_saves_all_prices(self):
         """Успешно сохраняет все цены из батча"""
-        with patch('collector.tasks.SyncDeribitClient') as MockClient:
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             # Возвращаем разные цены для разных тикеров
             mock_client.get_index_price_time.side_effect = [
@@ -55,36 +54,35 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch('collector.tasks.SyncSessionLocal', return_value=mock_session), \
-                    patch('collector.tasks.SyncPriceRepository', return_value=mock_repo):
+            with patch(
+                "collector.tasks.SyncSessionLocal", return_value=mock_session
+            ), patch("collector.tasks.SyncPriceRepository", return_value=mock_repo):
                 # Вызываем
-                fetch_price_batch(['btc_usd', 'eth_usd'])
+                fetch_price_batch(["btc_usd", "eth_usd"])
 
                 # Проверяем
                 assert mock_client.get_index_price_time.call_count == 2
                 assert mock_repo.save_price.call_count == 2
                 mock_session.commit.assert_called_once()
 
-
     def test_fetch_price_batch_rollback_on_api_failure(self):
         """При ошибке API происходит rollback, а не commit"""
-        with patch('collector.tasks.SyncDeribitClient') as MockClient:
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
             # Настраиваем моки
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = Exception("API недоступен")
             MockClient.return_value = mock_client
 
             mock_session = Mock()
-            with patch('collector.tasks.SyncSessionLocal', return_value=mock_session):
+            with patch("collector.tasks.SyncSessionLocal", return_value=mock_session):
                 # Вызываем задачу
                 with pytest.raises(Exception):
-                    fetch_price_batch(['btc_usd', 'eth_usd'])
+                    fetch_price_batch(["btc_usd", "eth_usd"])
 
                 # При ошибке был rollback, а НЕ commit
                 mock_session.rollback.assert_called_once()
                 mock_session.commit.assert_not_called()
                 mock_session.close.assert_called_once()
-
 
 
 def test_chunked_splits_correctly():

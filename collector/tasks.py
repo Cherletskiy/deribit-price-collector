@@ -3,7 +3,7 @@ from typing import Iterable
 
 from celery import Celery
 
-from app.core.config import Config
+from app.core.config import config
 from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
 from app.repositories import SyncPriceRepository
@@ -23,8 +23,8 @@ def chunked(iterable: Iterable[str], size: int) -> Iterable[list[str]]:
 
 celery_app = Celery("deribit_collector")
 celery_app.conf.update(
-    broker_url=Config.REDIS_URL,
-    result_backend=Config.REDIS_URL,
+    broker_url=config.REDIS_URL,
+    result_backend=config.REDIS_URL,
     timezone="UTC",
     enable_utc=True,
     task_ignore_result=True,
@@ -33,7 +33,7 @@ celery_app.conf.update(
 celery_app.conf.beat_schedule = {
     "fetch-deribit-prices": {
         "task": "collector.tasks.dispatch_price_batches",
-        "schedule": Config.PRICE_FETCH_INTERVAL_SEC,
+        "schedule": config.PRICE_FETCH_INTERVAL_SEC,
     }
 }
 
@@ -47,13 +47,13 @@ def dispatch_price_batches() -> None:
     Fan-out задача.
     Разбивает тикеры на батчи и ставит задачи в очередь.
     """
-    batch_size = Config.PRICE_BATCH_SIZE
+    batch_size = config.PRICE_BATCH_SIZE
 
     logger.debug(
-        f"Dispatching price fetch tasks | tickers_total: {len(Config.TICKERS)} | batch_size: {batch_size}"
+        f"Dispatching price fetch tasks | tickers_total: {len(config.TICKERS)} | batch_size: {batch_size}"
     )
 
-    for batch in chunked(Config.TICKERS, batch_size):
+    for batch in chunked(config.TICKERS, batch_size):
         fetch_price_batch.delay(batch)
 
 

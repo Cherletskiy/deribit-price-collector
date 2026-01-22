@@ -1,19 +1,20 @@
 from sqlalchemy import create_engine, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from app.core.config import Config
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+from app.core.config import config
 from app.core.logging_config import setup_logger
 
 logger = setup_logger(__name__)
 
 
 async_engine = create_async_engine(
-    url=Config.DATABASE_URL, echo=False, pool_size=5, max_overflow=10
+    url=config.DATABASE_URL, echo=False, pool_size=5, max_overflow=10
 )
 async_session_factory = async_sessionmaker(
     bind=async_engine, expire_on_commit=False, autoflush=False, class_=AsyncSession
 )
+
 
 async def get_async_session():
     async with async_session_factory() as session:
@@ -25,8 +26,9 @@ async def get_async_session():
         finally:
             await session.close()
 
+
 sync_engine = create_engine(
-    url=Config.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2"),
+    url=config.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2"),
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
