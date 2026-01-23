@@ -20,7 +20,7 @@ class Config(BaseSettings):
     DERIBIT_API_TIMEOUT_SEC: int = Field(default=10)
     PRICE_FETCH_INTERVAL_SEC: int = Field(default=60)
     PRICE_BATCH_SIZE: int = Field(default=5)
-    TICKERS: Json[list[str]] = Field(default=["btc_usd", "eth_usd"])
+    TICKERS: Json[list[str]] = Field(default='["btc_usd", "eth_usd"]')
 
     # Logging
     LOG_LEVEL: str = Field(default="INFO")
