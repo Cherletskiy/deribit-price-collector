@@ -224,8 +224,13 @@ def mock_price_repository(mock_price_models):
 @pytest.fixture
 def client_direct_mock(mock_price_repository):
     """Клиент с прямым моком репозитория в эндпоинтах"""
-    with patch("app.api.endpoints.AsyncPriceRepository") as mock_repo_class:
-        mock_repo_class.return_value = mock_price_repository
+    # Мокаем инициализацию БД в lifespan
+    with patch("app.main.init_db") as mock_init_db:
+        mock_init_db.return_value = None
 
-        with TestClient(app) as test_client:
-            yield test_client
+        # Мокаем создание репозитория ВНУТРИ эндпоинта
+        with patch("app.api.endpoints.AsyncPriceRepository") as mock_repo_class:
+            mock_repo_class.return_value = mock_price_repository
+
+            with TestClient(app) as test_client:
+                yield test_client
