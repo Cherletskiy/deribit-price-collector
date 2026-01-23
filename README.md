@@ -15,14 +15,16 @@
 
 ## Технологический стек
 
-* **FastAPI** — REST API
-* **Celery** — фоновая обработка задач
-* **PostgreSQL** — хранение данных
-* **Redis** — брокер сообщений Celery
-* **SQLAlchemy (sync / async)** — работа с БД
-* **httpx** — HTTP-клиент
-* **Docker / Docker Compose** — контейнеризация
-* **pytest** — тестирование
+- **FastAPI** — REST API  
+- **Celery** — фоновая обработка задач  
+- **PostgreSQL** — хранение данных  
+- **Redis** — брокер сообщений Celery  
+- **SQLAlchemy** (sync / async) — работа с БД  
+- **httpx** — HTTP-клиент  
+- **Docker / Docker Compose** — контейнеризация  
+- **pytest** — тестирование  
+- **Alembic** — миграции БД  
+- **GitHub Actions + GitLab CI** — непрерывная интеграция 
 
 ---
 
@@ -226,6 +228,11 @@ TOTAL 95%
 * тесты Celery задач с моками
 
 ---
+
+## CI
+Запуск тестов при `push`
+- GitHub Actions (`.github/workflows/test.yml`)
+- GitLab CI (`.gitlab-ci.yml`)
 
 ## Design Decisions
 
