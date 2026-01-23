@@ -3,16 +3,13 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.models import Base
-from app.core.config import Config
+from app.core.config import config as config_env
 
 
 config = context.config
 
 # Заменяем asyncpg на sync драйвер для миграций
-sync_dsn = (
-    f"postgresql://{Config.DB_USER}:{Config.DB_PASSWORD}"
-    f"@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"
-)
+sync_dsn = config_env.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
 config.set_main_option("sqlalchemy.url", sync_dsn)
 
 # Set target metadata
