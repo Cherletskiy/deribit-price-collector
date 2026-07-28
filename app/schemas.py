@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -18,6 +19,13 @@ class PriceResponse(BaseModel):
         from_attributes=True,
         extra="forbid",
     )
+
+
+class ErrorResponse(BaseModel):
+    error_code: str
+    message: str
+    request_id: str
+    details: list[dict[str, Any]] | dict[str, Any] | None = None
 
 
 class CandleInterval(StrEnum):

@@ -8,6 +8,7 @@ from app.repositories import AsyncPriceRepository
 from app.schemas import (
     CandleQuery,
     CandleResponse,
+    ErrorResponse,
     PriceByDateQuery,
     PriceResponse,
     PriceSummaryQuery,
@@ -41,7 +42,10 @@ async def get_supported_instruments() -> list[str]:
     return list(config.supported_tickers)
 
 
-@router.get("/prices")
+@router.get(
+    "/prices",
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
 async def get_all_prices(
     query: TickerWithPaginationQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
@@ -62,7 +66,10 @@ async def get_all_prices(
     return [PriceResponse.model_validate(price) for price in prices]
 
 
-@router.get("/prices/latest")
+@router.get(
+    "/prices/latest",
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
 async def get_latest_price(
     query: TickerQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
@@ -75,7 +82,10 @@ async def get_latest_price(
     return PriceResponse.model_validate(price)
 
 
-@router.get("/prices/by-date")
+@router.get(
+    "/prices/by-date",
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
 async def get_prices_by_date(
     query: PriceByDateQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
@@ -98,7 +108,10 @@ async def get_prices_by_date(
     return [PriceResponse.model_validate(price) for price in prices]
 
 
-@router.get("/prices/candles")
+@router.get(
+    "/prices/candles",
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
 async def get_price_candles(
     query: CandleQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
@@ -119,7 +132,10 @@ async def get_price_candles(
     return candles
 
 
-@router.get("/prices/summary")
+@router.get(
+    "/prices/summary",
+    responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+)
 async def get_price_summary(
     query: PriceSummaryQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),

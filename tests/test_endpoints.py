@@ -13,6 +13,20 @@ from app.schemas import PriceResponse
 
 
 class TestEndpoints:
+    def test_request_id_header_is_present(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/healthz")
+
+        assert response.status_code == 200
+        assert response.headers["X-Request-ID"]
+
+    def test_request_id_header_is_reused(self, client_direct_mock):
+        response = client_direct_mock.get(
+            "/api/v1/healthz", headers={"X-Request-ID": "custom-request-id"}
+        )
+
+        assert response.status_code == 200
+        assert response.headers["X-Request-ID"] == "custom-request-id"
+
     def test_healthcheck(self, client_direct_mock):
         response = client_direct_mock.get("/api/v1/healthz")
 
@@ -73,7 +87,11 @@ class TestEndpoints:
         )
 
         assert response.status_code == 422
-        error_detail = response.json()["detail"][0]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert body["message"] == "Validation failed"
+        assert body["request_id"] == response.headers["X-Request-ID"]
+        error_detail = body["details"][0]
         assert error_detail["type"] == "value_error"
         assert "Ticker must be one of" in error_detail["msg"]
 
@@ -91,7 +109,10 @@ class TestEndpoints:
             )
 
             assert response.status_code == 404
-            assert response.json()["detail"] == "No data found for this ticker"
+            body = response.json()
+            assert body["error_code"] == "http_404"
+            assert body["message"] == "No data found for this ticker"
+            assert body["request_id"] == response.headers["X-Request-ID"]
         finally:
             # Восстанавливаем side_effect
             mock_price_repository.get_all_by_ticker.side_effect = original_side_effect
@@ -128,7 +149,10 @@ class TestEndpoints:
             )
 
             assert response.status_code == 404
-            assert response.json()["detail"] == "No data found for this ticker"
+            body = response.json()
+            assert body["error_code"] == "http_404"
+            assert body["message"] == "No data found for this ticker"
+            assert body["request_id"] == response.headers["X-Request-ID"]
         finally:
             # Восстанавливаем side_effect
             mock_price_repository.get_latest_by_ticker.side_effect = (
@@ -234,7 +258,10 @@ class TestEndpoints:
         )
 
         assert response.status_code == 422
-        error_detail = response.json()["detail"][0]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert body["message"] == "Validation failed"
+        error_detail = body["details"][0]
         assert "Timestamp must be a valid UNIX timestamp" in error_detail["msg"]
 
     def test_get_prices_by_date_invalid_range(self, client_direct_mock):
@@ -249,7 +276,10 @@ class TestEndpoints:
         )
 
         assert response.status_code == 422
-        error_detail = response.json()["detail"][0]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert body["message"] == "Validation failed"
+        error_detail = body["details"][0]
         assert (
             "timestamp_from must be less than or equal to timestamp_to"
             in error_detail["msg"]
@@ -312,7 +342,10 @@ class TestEndpoints:
             )
 
             assert response.status_code == 404
-            assert response.json()["detail"] == "No data found for this query"
+            body = response.json()
+            assert body["error_code"] == "http_404"
+            assert body["message"] == "No data found for this query"
+            assert body["request_id"] == response.headers["X-Request-ID"]
         finally:
             mock_price_repository.get_by_ticker_and_date_range.side_effect = (
                 original_side_effect
@@ -361,7 +394,10 @@ class TestEndpoints:
             )
 
             assert response.status_code == 404
-            assert response.json()["detail"] == "No data found for this query"
+            body = response.json()
+            assert body["error_code"] == "http_404"
+            assert body["message"] == "No data found for this query"
+            assert body["request_id"] == response.headers["X-Request-ID"]
         finally:
             mock_price_repository.get_by_ticker_and_date_range.side_effect = (
                 original_side_effect
@@ -379,7 +415,10 @@ class TestEndpoints:
         )
 
         assert response.status_code == 422
-        error_detail = response.json()["detail"][0]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert body["message"] == "Validation failed"
+        error_detail = body["details"][0]
         assert (
             "timestamp_from must be less than or equal to timestamp_to"
             in error_detail["msg"]
@@ -403,7 +442,10 @@ class TestEndpoints:
             )
 
             assert response.status_code == 404
-            assert response.json()["detail"] == "No data found for this query"
+            body = response.json()
+            assert body["error_code"] == "http_404"
+            assert body["message"] == "No data found for this query"
+            assert body["request_id"] == response.headers["X-Request-ID"]
         finally:
             # Восстанавливаем side_effect
             mock_price_repository.get_by_ticker_and_date_range.side_effect = (
@@ -557,7 +599,9 @@ class TestEndpoints:
             "/api/v1/prices", params={"ticker": "btc_usd", "limit": 0}
         )
         assert response.status_code == 422
-        assert "limit" in response.json()["detail"][0]["loc"]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert "limit" in body["details"][0]["loc"]
 
         # limit больше максимального
         response = client_direct_mock.get(
@@ -578,7 +622,9 @@ class TestEndpoints:
             "/api/v1/prices", params={"ticker": "btc_usd", "sorting": "invalid"}
         )
         assert response.status_code == 422
-        assert "sorting" in response.json()["detail"][0]["loc"]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert "sorting" in body["details"][0]["loc"]
 
         # Корректные значения
         for sorting_value in ["asc", "desc"]:
@@ -649,13 +695,17 @@ class TestQueryParameters:
     def test_ticker_case_sensitivity(self, simple_client):
         response = simple_client.get("/api/v1/prices", params={"ticker": "BTC_USD"})
         assert response.status_code == 422
-        assert "Ticker must be one of" in response.json()["detail"][0]["msg"]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert "Ticker must be one of" in body["details"][0]["msg"]
 
     def test_missing_required_parameter(self, simple_client):
         """Проверка обязательных параметров"""
         response = simple_client.get("/api/v1/prices")
         assert response.status_code == 422
-        error_detail = response.json()["detail"][0]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        error_detail = body["details"][0]
         assert error_detail["type"] == "missing"
 
     def test_timestamp_max_value(self, simple_client):
@@ -665,7 +715,9 @@ class TestQueryParameters:
             params={"ticker": "btc_usd", "timestamp_from": 2_500_000_001},
         )
         assert response.status_code == 422
-        assert "2500000000" in response.json()["detail"][0]["msg"]
+        body = response.json()
+        assert body["error_code"] == "validation_error"
+        assert "2500000000" in body["details"][0]["msg"]
 
     def test_pagination_default_values(self, simple_client):
         """Тест значений по умолчанию для пагинации"""

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import config
+from app.core.request_context import request_id_context
 
 
 class JsonFormatter(logging.Formatter):
@@ -13,6 +14,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "level": record.levelname,
             "message": record.getMessage(),
+            "request_id": request_id_context.get(),
         }
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
