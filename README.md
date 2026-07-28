@@ -1,320 +1,319 @@
 # Deribit Price Collector
 
-## Описание
+`deribit-price-collector` is a market data ingestion service that collects index
+prices from Deribit, stores an idempotent history in PostgreSQL, and exposes an
+HTTP API for querying raw prices, candle aggregations, and summary analytics.
 
-Сервис для периодического сбора индексных цен криптовалют с биржи **Deribit** и предоставления HTTP API для получения исторических и актуальных данных.
+The project started as a learning exercise and was refactored into a stronger
+portfolio case focused on reliability, observability, and extensibility.
 
-Проект реализован в рамках тестового задания и ориентирован на:
+## Highlights
 
-* корректную архитектуру,
-* масштабируемость,
-* надёжную работу фоновых задач,
-* тестируемость.
+- Idempotent price ingestion with unique `(ticker, timestamp)` protection
+- Batch-based Celery collection with selective retries and backoff
+- Historical backfill workflow for data repair
+- Reconciliation workflow for stale or missing intervals
+- Provider abstraction for future multi-exchange support
+- Structured API errors with request IDs
+- Runtime health, readiness, JSON metrics, and Prometheus-compatible metrics
+- Candle and summary analytics endpoints
+- Dockerized local environment with PostgreSQL, Redis, API, worker, and beat
+- `uv`-based project setup with `ruff`, `mypy`, `pytest`, and CI checks
 
----
+## Stack
 
-## Технологический стек
+- Python 3.12
+- FastAPI
+- Celery
+- PostgreSQL
+- Redis
+- SQLAlchemy 2
+- Alembic
+- httpx
+- Docker Compose
+- pytest
+- Ruff
+- mypy
+- uv
 
-- **FastAPI** — REST API  
-- **Celery** — фоновая обработка задач  
-- **PostgreSQL** — хранение данных  
-- **Redis** — брокер сообщений Celery  
-- **SQLAlchemy** (sync / async) — работа с БД  
-- **httpx** — HTTP-клиент  
-- **Docker / Docker Compose** — контейнеризация  
-- **pytest** — тестирование  
-- **Alembic** — миграции БД  
-- **GitHub Actions + GitLab CI** — непрерывная интеграция 
+## Architecture
 
----
+The service is split into two execution paths:
 
-## Архитектура
+### API layer
 
-Проект состоит из двух логически разделённых частей:
+- async FastAPI application
+- async SQLAlchemy access
+- read-focused endpoints for historical and analytical queries
 
-### 1. API слой (FastAPI)
+### Collector layer
 
-* Асинхронные эндпоинты
-* Асинхронный доступ к БД
-* Используется для чтения данных (query-heavy workload)
+- sync Celery workers
+- batch dispatch for instruments
+- provider-based market data client abstraction
+- retry-aware live collection, backfill, and reconciliation workflows
 
-### 2. Collector (Celery)
+## Key capabilities
 
-* Периодический сбор данных с Deribit
-* Синхронная реализация (Celery worker)
-* Батчинг тикеров и fan-out задач
-* Частичная обработка ошибок внутри батча
+### Ingestion
 
----
+- periodic live price collection
+- idempotent writes on repeated timestamps
+- partial batch success handling
+- transient vs permanent collector failures
 
-## Структура проекта
+### Repair workflows
 
-```
+- manual backfill CLI for historical repair
+- scheduled reconciliation for stale or gapped recent history
+
+### Query APIs
+
+- latest price
+- paginated historical prices
+- date-range filtering
+- candle aggregation
+- summary and trend analytics
+
+### Observability
+
+- `GET /api/v1/healthz`
+- `GET /api/v1/readyz`
+- `GET /api/v1/metrics`
+- `GET /api/v1/metrics/prometheus`
+- request ID propagation via `X-Request-ID`
+
+## Project layout
+
+```text
 .
-├── app/                    # FastAPI приложение
-│   ├── api/                # HTTP эндпоинты
-│   ├── core/               # конфигурация, БД, логирование
-│   ├── models.py           # SQLAlchemy модели
-│   ├── repositories.py     # async / sync репозитории
-│   ├── schemas.py          # Pydantic схемы
-│   └── services.py         # бизнес-логика
-│
-├── collector/              # Celery задачи и HTTP клиент
+├── app/
+│   ├── api/
+│   ├── core/
+│   ├── models.py
+│   ├── repositories.py
+│   ├── schemas.py
+│   └── services.py
+├── collector/
+│   ├── backfill.py
 │   ├── client.py
+│   ├── exceptions.py
+│   ├── providers.py
+│   ├── reconcile.py
 │   └── tasks.py
-│
-├── alembic/                # миграции БД
-├── tests/                  # unit и integration тесты
+├── alembic/
+├── tests/
 ├── docker-compose.yml
 ├── Dockerfile
-├── .env.example
-└── README.md
+├── Makefile
+├── pyproject.toml
+└── .env.example
 ```
 
----
+## Quick start
 
-## Описание параметров `.env`
-
-```ini
-# Deribit API
-DERIBIT_API_BASE_URL=https://www.deribit.com/api/v2
-# Базовый URL для запросов к Deribit API (не изменять без необходимости)
-
-DERIBIT_API_TIMEOUT_SEC=10
-# Таймаут в секундах для HTTP-запросов к Deribit.
-# Если API не отвечает дольше указанного времени, запрос прерывается.
-
-PRICE_FETCH_INTERVAL_SEC=60
-# Интервал в секундах между сбором данных фоновой задачей Celery.
-# По умолчанию — каждую минуту.
-
-PRICE_BATCH_SIZE=5
-# Количество тикеров, обрабатываемых в одной задаче Celery.
-# При большом количестве тикеров позволяет распределить нагрузку и повысить отказоустойчивость.
-
-TICKERS=["btc_usd","eth_usd"]
-# Список тикеров, для которых собираются цены.
-# Должен содержать только поддерживаемые Deribit инструменты.
-# Формат: JSON-массив строк.
-```
-
-## Запуск проекта
-
-### 1. Подготовка окружения
-
-Создать `.env` файл на основе шаблона:
+### 1. Create the environment file
 
 ```bash
 cp .env.example .env
 ```
 
-### 2. Запуск через Docker Compose
+### 2. Start the local stack
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-После запуска будут подняты:
+Services:
 
-* FastAPI (`http://localhost:8000`)
-* PostgreSQL
-* Redis
-* Celery worker
-* Celery beat (периодические задачи)
+- API: `http://localhost:8000`
+- PostgreSQL
+- Redis
+- Celery worker
+- Celery beat
 
----
+## Local development
 
-## API
+### Install dependencies
 
-Базовый URL:
-
+```bash
+uv sync --group dev
 ```
+
+### Quality checks
+
+```bash
+make format
+make lint
+make typecheck
+make test
+make check
+```
+
+## Environment variables
+
+### Core runtime
+
+```ini
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=deribit_db
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_DB=0
+```
+
+### Provider and ingestion
+
+```ini
+MARKET_DATA_PROVIDER=deribit
+DERIBIT_API_BASE_URL=https://www.deribit.com/api/v2
+DERIBIT_API_TIMEOUT_SEC=10
+PRICE_FETCH_INTERVAL_SEC=60
+PRICE_BATCH_SIZE=5
+TICKERS=["btc_usd","eth_usd"]
+```
+
+### Reconciliation
+
+```ini
+RECONCILIATION_INTERVAL_SEC=300
+RECONCILIATION_LOOKBACK_SEC=86400
+RECONCILIATION_STALE_MULTIPLIER=2
+```
+
+### Logging
+
+```ini
+LOG_LEVEL=INFO
+LOG_JSON=false
+```
+
+## HTTP API
+
+Base URL:
+
+```text
 http://localhost:8000/api/v1
 ```
 
-### 1. Получение всех цен по тикеру
+### Operational endpoints
 
-**GET** `/prices`
+- `GET /healthz`
+- `GET /readyz`
+- `GET /metrics`
+- `GET /metrics/prometheus`
 
-Параметры:
+### Metadata endpoints
 
-* `ticker` (обязательный): `btc_usd` | `eth_usd`
-* `limit` (опционально, default=50)
-* `offset` (опционально, default=0)
-* `sorting` (опционально): `asc` | `desc`
+- `GET /instruments`
+- `GET /instruments/details`
+- `GET /providers`
+- `GET /providers/active`
 
-Пример:
+### Market data endpoints
+
+- `GET /prices`
+- `GET /prices/latest`
+- `GET /prices/by-date`
+- `GET /prices/candles`
+- `GET /prices/summary`
+
+### Example requests
 
 ```bash
 curl "http://localhost:8000/api/v1/prices?ticker=btc_usd&limit=10&sorting=desc"
-```
-
----
-
-### 2. Получение последней цены
-
-**GET** `/prices/latest`
-
-Параметры:
-
-* `ticker` (обязательный)
-
-Пример:
-
-```bash
 curl "http://localhost:8000/api/v1/prices/latest?ticker=eth_usd"
+curl "http://localhost:8000/api/v1/prices/by-date?ticker=btc_usd&timestamp_from=1700000000&timestamp_to=1700003600"
+curl "http://localhost:8000/api/v1/prices/candles?ticker=btc_usd&interval=1h&timestamp_from=1700000000&timestamp_to=1700086400"
+curl "http://localhost:8000/api/v1/prices/summary?ticker=btc_usd&timestamp_from=1700000000&timestamp_to=1700086400"
+curl "http://localhost:8000/api/v1/providers/active"
+curl "http://localhost:8000/api/v1/metrics/prometheus"
 ```
 
----
+## Background workflows
 
-### 3. Получение цен по диапазону дат
+### Live collection
 
-**GET** `/prices/by-date`
+- `collector.tasks.dispatch_price_batches`
+- `collector.tasks.fetch_price_batch`
 
-Параметры:
-
-* `ticker` (обязательный)
-* `timestamp_from` (опционально, UNIX timestamp)
-* `timestamp_to` (опционально, UNIX timestamp)
-* `limit`, `offset`, `sorting` — аналогично `/prices`
-
-Пример:
+### Historical repair
 
 ```bash
-curl "http://localhost:8000/api/v1/prices/by-date \
-?ticker=btc_usd&timestamp_from=1700000000&timestamp_to=1700001000"
+make backfill RANGE=1d
 ```
 
----
-
-### Ошибки
-* 422 — невалидные параметры
-* 404 — данные не найдены
-
-## Фоновый сбор данных
-
-* Celery Beat запускает сбор с интервалом `PRICE_FETCH_INTERVAL_SEC`
-* Тикеры разбиваются на батчи размером `PRICE_BATCH_SIZE`
-* Каждый батч обрабатывается отдельной Celery задачей
-* Используется один `httpx.Client` на батч
-
-### Поведение при ошибках
-
-* Ошибка одного тикера **не прерывает** обработку остальных
-* `commit` выполняется, если успешно сохранён хотя бы один тикер
-* Если все тикеры упали — задача считается неуспешной и будет повторена
-
----
-
-## Тестирование
-
-Тесты запускаются локально (вне Docker):
+or
 
 ```bash
-pytest --cov
+uv run -m collector.backfill --range 1d --ticker btc_usd
 ```
 
-Покрытие кода:
+### Recent reconciliation
 
-```
-TOTAL 95%
-```
-
-Типы тестов:
-
-* unit-тесты бизнес-логики
-* тесты HTTP эндпоинтов
-* интеграционные тесты репозиториев (SQLite in-memory)
-* тесты Celery задач с моками
-
----
-
-## CI
-Запуск тестов при `push`
-- GitHub Actions (`.github/workflows/test.yml`)
-- GitLab CI (`.gitlab-ci.yml`)
-
-## Design Decisions
-
-### Разделение sync и async стека
-
-* FastAPI использует **асинхронный доступ к БД**
-* Celery использует **синхронный доступ**
-
-Причины:
-
-* Celery не предназначен для полноценной async-модели
-* Попытки использовать async в Celery приводят к сложным и нестабильным решениям
-* Чёткое разделение повышает надёжность и читаемость кода
-
----
-
-### Отказ от async Celery worker
-
-Рассматривались варианты:
-
-* `asyncio` воркеры
-* `async_to_sync`
-* отдельные event loop на задачу
-
-В итоге отказался из-за:
-
-* сложности отладки
-* неочевидного выигрыша для текущей нагрузки
-* увеличения когнитивной сложности
-
-Выбран простой и надёжный sync-подход.
-
----
-
-### Батчинг и fan-out задач
-
-Вместо одной задачи на все тикеры реализовано:
-
-* разбиение тикеров на батчи
-* отдельная задача на каждый батч
-
-Это позволяет:
-
-* масштабироваться до сотен тикеров
-* эффективно использовать несколько worker-процессов
-* обрабатывать частичные ошибки
-
----
-
-### Индексы в БД
-
-Используется составной индекс:
-
-```
-(ticker, timestamp)
+```bash
+make reconcile LOOKBACK_SECONDS=86400
 ```
 
-Причины:
+or
 
-* оптимизация всех основных запросов API
-* корректная сортировка без filesort
-* меньше индексов — меньше overhead при записи
+```bash
+uv run -m collector.reconcile --lookback-seconds 86400 --ticker btc_usd
+```
 
----
+## Error model
 
-### HTTP клиент
+Validation and application errors use a consistent response shape:
 
-Используется **httpx** в синхронном режиме:
+```json
+{
+  "error_code": "validation_error",
+  "message": "Validation failed",
+  "request_id": "a1b2c3d4",
+  "details": []
+}
+```
 
-* современная библиотека
-* единый клиент на батч
-* одинаковый стек для FastAPI и collector
+Every response also includes an `X-Request-ID` header.
 
----
+## Quality and testing
 
-### Минимально достаточная сложность
+The project includes:
 
-Сознательно отказался от:
+- endpoint tests
+- collector task tests
+- repository integration tests
+- static typing with mypy
+- linting and formatting with Ruff
 
-* over-engineering
-* сложных асинхронных схем
-* преждевременной оптимизации
+Typical commands:
 
-Решение соответствует текущим требованиям и легко расширяется при необходимости.
+```bash
+uv run pytest
+uv run ruff check .
+uv run mypy .
+```
 
+## Why this project is stronger than a basic pet project
+
+This codebase is intentionally positioned as a small but production-oriented
+data service rather than a CRUD demo. The main focus areas are:
+
+- reliability under retries and repeated collection
+- recoverability through backfill and reconciliation
+- clear API contracts and operational visibility
+- architecture that can grow from one provider to multiple exchanges
+
+## Next steps
+
+Potential future upgrades:
+
+- additional market data providers
+- database-side analytical aggregations
+- Prometheus/Grafana dashboards
+- reconciliation outcome counters and alerts
+- full end-to-end integration environment
