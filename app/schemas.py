@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -17,6 +18,49 @@ class PriceResponse(BaseModel):
         from_attributes=True,
         extra="forbid",
     )
+
+
+class CandleInterval(StrEnum):
+    ONE_MINUTE = "1m"
+    FIVE_MINUTES = "5m"
+    ONE_HOUR = "1h"
+    ONE_DAY = "1d"
+
+    @property
+    def seconds(self) -> int:
+        return {
+            CandleInterval.ONE_MINUTE: 60,
+            CandleInterval.FIVE_MINUTES: 300,
+            CandleInterval.ONE_HOUR: 3600,
+            CandleInterval.ONE_DAY: 86400,
+        }[self]
+
+
+class CandleResponse(BaseModel):
+    ticker: str
+    bucket_start: int
+    bucket_end: int
+    open_price: Decimal
+    high_price: Decimal
+    low_price: Decimal
+    close_price: Decimal
+    average_price: Decimal
+    points: int
+
+
+class PriceSummaryResponse(BaseModel):
+    ticker: str
+    timestamp_from: int
+    timestamp_to: int
+    points: int
+    min_price: Decimal
+    max_price: Decimal
+    average_price: Decimal
+    price_change: Decimal
+    price_change_percent: Decimal
+    start_price: Decimal
+    end_price: Decimal
+    trend: str
 
 
 class PaginationSortQuery(BaseModel):
@@ -63,4 +107,34 @@ class PriceByDateQuery(TickerWithPaginationQuery):
                 raise ValueError(
                     "timestamp_from must be less than or equal to timestamp_to"
                 )
+        return self
+
+
+class CandleQuery(TickerQuery):
+    interval: CandleInterval = Field(
+        ...,
+        description="Aggregation interval: 1m, 5m, 1h, 1d",
+    )
+    timestamp_from: int = Field(..., ge=0, le=2_500_000_000)
+    timestamp_to: int = Field(..., ge=0, le=2_500_000_000)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "CandleQuery":
+        if self.timestamp_from > self.timestamp_to:
+            raise ValueError(
+                "timestamp_from must be less than or equal to timestamp_to"
+            )
+        return self
+
+
+class PriceSummaryQuery(TickerQuery):
+    timestamp_from: int = Field(..., ge=0, le=2_500_000_000)
+    timestamp_to: int = Field(..., ge=0, le=2_500_000_000)
+
+    @model_validator(mode="after")
+    def validate_range(self) -> "PriceSummaryQuery":
+        if self.timestamp_from > self.timestamp_to:
+            raise ValueError(
+                "timestamp_from must be less than or equal to timestamp_to"
+            )
         return self

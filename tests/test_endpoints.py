@@ -255,6 +255,136 @@ class TestEndpoints:
             in error_detail["msg"]
         )
 
+    def test_get_price_candles_success(self, client_direct_mock):
+        response = client_direct_mock.get(
+            "/api/v1/prices/candles",
+            params={
+                "ticker": "btc_usd",
+                "interval": "1d",
+                "timestamp_from": 1609459200,
+                "timestamp_to": 1609718400,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data) == 4
+        assert data[0]["ticker"] == "btc_usd"
+        assert data[0]["bucket_start"] == 1609459200
+        assert data[0]["bucket_end"] == 1609545599
+        assert data[0]["open_price"] == "50000.00"
+        assert data[0]["high_price"] == "50000.00"
+        assert data[0]["low_price"] == "50000.00"
+        assert data[0]["close_price"] == "50000.00"
+        assert data[0]["average_price"] == "50000.00"
+        assert data[0]["points"] == 1
+
+    def test_get_price_candles_invalid_interval(self, client_direct_mock):
+        response = client_direct_mock.get(
+            "/api/v1/prices/candles",
+            params={
+                "ticker": "btc_usd",
+                "interval": "10m",
+                "timestamp_from": 1609459200,
+                "timestamp_to": 1609718400,
+            },
+        )
+
+        assert response.status_code == 422
+
+    def test_get_price_candles_no_data(self, client_direct_mock, mock_price_repository):
+        original_side_effect = (
+            mock_price_repository.get_by_ticker_and_date_range.side_effect
+        )
+        mock_price_repository.get_by_ticker_and_date_range.side_effect = None
+        mock_price_repository.get_by_ticker_and_date_range.return_value = []
+
+        try:
+            response = client_direct_mock.get(
+                "/api/v1/prices/candles",
+                params={
+                    "ticker": "btc_usd",
+                    "interval": "1d",
+                    "timestamp_from": 1609459200,
+                    "timestamp_to": 1609718400,
+                },
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "No data found for this query"
+        finally:
+            mock_price_repository.get_by_ticker_and_date_range.side_effect = (
+                original_side_effect
+            )
+            mock_price_repository.get_by_ticker_and_date_range.return_value = None
+
+    def test_get_price_summary_success(self, client_direct_mock):
+        response = client_direct_mock.get(
+            "/api/v1/prices/summary",
+            params={
+                "ticker": "btc_usd",
+                "timestamp_from": 1609459200,
+                "timestamp_to": 1609718400,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+
+        assert data["ticker"] == "btc_usd"
+        assert data["points"] == 4
+        assert data["min_price"] == "50000.00"
+        assert data["max_price"] == "53000.00"
+        assert data["average_price"] == "51500.00"
+        assert data["price_change"] == "3000.00"
+        assert data["price_change_percent"] == "6.00"
+        assert data["start_price"] == "50000.00"
+        assert data["end_price"] == "53000.00"
+        assert data["trend"] == "up"
+
+    def test_get_price_summary_no_data(self, client_direct_mock, mock_price_repository):
+        original_side_effect = (
+            mock_price_repository.get_by_ticker_and_date_range.side_effect
+        )
+        mock_price_repository.get_by_ticker_and_date_range.side_effect = None
+        mock_price_repository.get_by_ticker_and_date_range.return_value = []
+
+        try:
+            response = client_direct_mock.get(
+                "/api/v1/prices/summary",
+                params={
+                    "ticker": "btc_usd",
+                    "timestamp_from": 1609459200,
+                    "timestamp_to": 1609718400,
+                },
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "No data found for this query"
+        finally:
+            mock_price_repository.get_by_ticker_and_date_range.side_effect = (
+                original_side_effect
+            )
+            mock_price_repository.get_by_ticker_and_date_range.return_value = None
+
+    def test_get_price_summary_invalid_range(self, client_direct_mock):
+        response = client_direct_mock.get(
+            "/api/v1/prices/summary",
+            params={
+                "ticker": "btc_usd",
+                "timestamp_from": 1609718400,
+                "timestamp_to": 1609459200,
+            },
+        )
+
+        assert response.status_code == 422
+        error_detail = response.json()["detail"][0]
+        assert (
+            "timestamp_from must be less than or equal to timestamp_to"
+            in error_detail["msg"]
+        )
+
     def test_get_prices_by_date_no_data(
         self, client_direct_mock, mock_price_repository
     ):

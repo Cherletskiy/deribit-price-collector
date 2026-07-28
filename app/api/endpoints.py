@@ -6,8 +6,12 @@ from app.core.db import get_async_session, ping_db
 from app.core.metrics import runtime_metrics
 from app.repositories import AsyncPriceRepository
 from app.schemas import (
+    CandleQuery,
+    CandleResponse,
     PriceByDateQuery,
     PriceResponse,
+    PriceSummaryQuery,
+    PriceSummaryResponse,
     TickerQuery,
     TickerWithPaginationQuery,
 )
@@ -92,3 +96,44 @@ async def get_prices_by_date(
         raise HTTPException(status_code=404, detail="No data found for this query")
 
     return [PriceResponse.model_validate(price) for price in prices]
+
+
+@router.get("/prices/candles")
+async def get_price_candles(
+    query: CandleQuery = Depends(),
+    db: AsyncSession = Depends(get_async_session),
+) -> list[CandleResponse]:
+    repo = AsyncPriceRepository(db)
+    service = PriceService(repo)
+
+    candles = await service.get_candles(
+        ticker=query.ticker,
+        interval=query.interval,
+        timestamp_from=query.timestamp_from,
+        timestamp_to=query.timestamp_to,
+    )
+
+    if not candles:
+        raise HTTPException(status_code=404, detail="No data found for this query")
+
+    return candles
+
+
+@router.get("/prices/summary")
+async def get_price_summary(
+    query: PriceSummaryQuery = Depends(),
+    db: AsyncSession = Depends(get_async_session),
+) -> PriceSummaryResponse:
+    repo = AsyncPriceRepository(db)
+    service = PriceService(repo)
+
+    summary = await service.get_price_summary(
+        ticker=query.ticker,
+        timestamp_from=query.timestamp_from,
+        timestamp_to=query.timestamp_to,
+    )
+
+    if summary is None:
+        raise HTTPException(status_code=404, detail="No data found for this query")
+
+    return summary
