@@ -107,13 +107,11 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_partial_success(self):
-        """При ошибке одного тикера остальные сохраняются"""
         with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
-            # Первый успешен, второй падает
             mock_client.get_index_price_time.side_effect = [
-                (Decimal("50000"), 1234567890),  # btc_usd - OK
-                Exception("API error"),  # eth_usd - FAIL
+                (Decimal("50000"), 1234567890),
+                Exception("API error"),
             ]
             MockClient.return_value = mock_client
 
@@ -128,26 +126,50 @@ class TestFetchPriceBatch:
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
-                # Вызываем
                 fetch_price_batch(["btc_usd", "eth_usd"])
 
-                # Проверяем:
-                # 1. Оба тикера были обработаны
                 assert mock_client.get_index_price_time.call_count == 2
-
-                # 2. Успешный тикер сохранен
                 mock_repo.save_price.assert_called_once_with(
                     ticker="btc_usd", price=Decimal("50000"), timestamp=1234567890
                 )
-
-                # 3. Commit был (т.к. есть успехи)
                 mock_session.commit.assert_called_once()
                 mock_session.rollback.assert_not_called()
-                # 4. Сессия закрылась
+                mock_session.close.assert_called_once()
+
+    def test_fetch_price_batch_updates_existing_price(self):
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+            mock_client = Mock()
+            mock_client.get_index_price_time.return_value = (
+                Decimal("51000"),
+                1234567890,
+            )
+            MockClient.return_value = mock_client
+
+            mock_session = Mock()
+            mock_repo = Mock()
+            existing_price = Mock()
+            mock_repo.save_price.return_value = existing_price
+
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
+                mock_http_client = Mock()
+                MockHttpClient.return_value.__enter__.return_value = mock_http_client
+
+                fetch_price_batch(["btc_usd"])
+
+                mock_repo.save_price.assert_called_once_with(
+                    ticker="btc_usd",
+                    price=Decimal("51000"),
+                    timestamp=1234567890,
+                )
+                mock_session.commit.assert_called_once()
+                mock_session.rollback.assert_not_called()
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_all_failed(self):
-        """Если все тикеры упали - rollback и исключение"""
         with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = Exception("API down")
@@ -160,25 +182,16 @@ class TestFetchPriceBatch:
                 patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
                 patch("collector.tasks.httpx.Client") as MockHttpClient,
             ):
-                # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
-                # Ожидаем исключение
                 with pytest.raises(Exception, match="All tickers failed"):
                     fetch_price_batch(["btc_usd", "eth_usd"])
 
-                # Проверяем:
-                # 1. Оба тикера пытались обработаться
                 assert mock_client.get_index_price_time.call_count == 2
-
-                # 2. Ничего не сохранилось
                 mock_repo.save_price.assert_not_called()
-
-                # 3. Был rollback (все упали) и commit не был вызван
                 mock_session.rollback.assert_called_once()
                 mock_session.commit.assert_not_called()
-                # 4. Сессия закрылась в finally
                 mock_session.close.assert_called_once()
 
 

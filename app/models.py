@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Index, Numeric, func
+from sqlalchemy import Index, Numeric, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -25,4 +25,7 @@ class Price(Base):
         nullable=False,
     )
 
-    __table_args__ = (Index("ix_prices_ticker_timestamp", "ticker", "timestamp"),)
+    __table_args__ = (
+        UniqueConstraint("ticker", "timestamp", name="uq_prices_ticker_timestamp"),
+        Index("ix_prices_ticker_timestamp", "ticker", "timestamp"),
+    )

@@ -85,6 +85,16 @@ class SyncPriceRepository:
         self.session = session
 
     def save_price(self, ticker: str, price: Decimal, timestamp: int) -> Price:
-        obj = Price(ticker=ticker, price=price, timestamp=timestamp)
-        self.session.add(obj)
+        stmt = select(Price).where(
+            Price.ticker == ticker,
+            Price.timestamp == timestamp,
+        )
+        obj = self.session.execute(stmt).scalar_one_or_none()
+
+        if obj is None:
+            obj = Price(ticker=ticker, price=price, timestamp=timestamp)
+            self.session.add(obj)
+            return obj
+
+        obj.price = price
         return obj
