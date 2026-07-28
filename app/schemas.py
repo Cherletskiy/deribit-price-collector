@@ -1,9 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.core.config import config
 from app.repositories import SortOrder
 
 
@@ -20,28 +20,28 @@ class PriceResponse(BaseModel):
 
 
 class PaginationSortQuery(BaseModel):
-    """Базовая схема пагинации"""
-
     limit: int = Field(50, ge=1, le=1000, description="Количество записей (1–1000)")
     offset: int = Field(0, ge=0, description="Смещение от начала")
     sorting: SortOrder = Field(SortOrder.ASC, description="Порядок сортировки")
 
 
 class TickerQuery(BaseModel):
-    """Базовая схема для запросов с тикером (без пагинации)"""
+    ticker: str
 
-    ticker: Literal["btc_usd", "eth_usd"]
+    @field_validator("ticker")
+    @classmethod
+    def validate_ticker(cls, value: str) -> str:
+        if value not in config.supported_tickers_set:
+            supported = ", ".join(config.supported_tickers)
+            raise ValueError(f"Ticker must be one of: {supported}")
+        return value
 
 
 class TickerWithPaginationQuery(PaginationSortQuery, TickerQuery):
-    """Схема с тикером и пагинацией"""
-
     pass
 
 
 class PriceByDateQuery(TickerWithPaginationQuery):
-    """Схема для запроса с временным диапазоном"""
-
     timestamp_from: int | None = None
     timestamp_to: int | None = None
 

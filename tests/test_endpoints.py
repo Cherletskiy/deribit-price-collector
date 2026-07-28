@@ -12,10 +12,13 @@ from app.schemas import PriceResponse
 
 
 class TestEndpoints:
-    """Тесты эндпоинтов"""
+    def test_get_supported_instruments(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/instruments")
+
+        assert response.status_code == 200
+        assert response.json() == ["btc_usd", "eth_usd"]
 
     def test_get_all_prices_success(self, client_direct_mock, mock_price_repository):
-        """Успешное получение всех цен (без параметров пагинации)"""
         response = client_direct_mock.get(
             "/api/v1/prices", params={"ticker": "btc_usd"}
         )
@@ -30,23 +33,22 @@ class TestEndpoints:
         assert data[0]["price"] == "50000.00"
         assert data[0]["timestamp"] == 1609459200
 
-        # Проверяем, что вызывался правильный метод репозитория
         mock_price_repository.get_all_by_ticker.assert_called_once_with(
             ticker="btc_usd",
-            limit=50,  # значение по умолчанию
-            offset=0,  # значение по умолчанию
-            sorting=SortOrder.ASC,  # значение по умолчанию
+            limit=50,
+            offset=0,
+            sorting=SortOrder.ASC,
         )
 
     def test_get_all_prices_invalid_ticker(self, client_direct_mock):
-        """Запрос с невалидным тикером"""
         response = client_direct_mock.get(
             "/api/v1/prices", params={"ticker": "invalid_ticker"}
         )
 
         assert response.status_code == 422
         error_detail = response.json()["detail"][0]
-        assert error_detail["type"] == "literal_error"
+        assert error_detail["type"] == "value_error"
+        assert "Ticker must be one of" in error_detail["msg"]
 
     def test_get_all_prices_no_data(self, client_direct_mock, mock_price_repository):
         """Запрос, когда нет данных"""
@@ -468,8 +470,6 @@ class TestEndpoints:
 
 
 class TestQueryParameters:
-    """Тесты валидации query-параметров"""
-
     @pytest.fixture
     def simple_client(self):
         async def override_async_session():
@@ -490,9 +490,9 @@ class TestQueryParameters:
         app.dependency_overrides.clear()
 
     def test_ticker_case_sensitivity(self, simple_client):
-        """Проверка чувствительности к регистру тикера"""
         response = simple_client.get("/api/v1/prices", params={"ticker": "BTC_USD"})
         assert response.status_code == 422
+        assert "Ticker must be one of" in response.json()["detail"][0]["msg"]
 
     def test_missing_required_parameter(self, simple_client):
         """Проверка обязательных параметров"""

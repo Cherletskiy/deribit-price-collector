@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import config
 from app.core.db import get_async_session
 from app.repositories import AsyncPriceRepository
 from app.schemas import (
@@ -14,14 +15,16 @@ from app.services import PriceService
 router = APIRouter(prefix="/api/v1", tags=["prices"])
 
 
+@router.get("/instruments")
+async def get_supported_instruments() -> list[str]:
+    return list(config.supported_tickers)
+
+
 @router.get("/prices")
 async def get_all_prices(
     query: TickerWithPaginationQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[PriceResponse]:
-    """
-    Получение данных по указанной валюте с пагинацией и сортировкой.
-    """
     repo = AsyncPriceRepository(db)
     service = PriceService(repo)
 
@@ -43,9 +46,6 @@ async def get_latest_price(
     query: TickerQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
 ) -> PriceResponse:
-    """
-    Получение последней цены валюты.
-    """
     repo = AsyncPriceRepository(db)
     service = PriceService(repo)
     price = await service.get_latest_price(query.ticker)
@@ -59,9 +59,6 @@ async def get_prices_by_date(
     query: PriceByDateQuery = Depends(),
     db: AsyncSession = Depends(get_async_session),
 ) -> list[PriceResponse]:
-    """
-    Получение цены валюты с фильтром по дате, пагинацией и сортировкой.
-    """
     repo = AsyncPriceRepository(db)
     service = PriceService(repo)
 

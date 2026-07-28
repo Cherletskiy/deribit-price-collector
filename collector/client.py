@@ -9,36 +9,16 @@ logger = setup_logger(__name__)
 
 
 class SyncDeribitClient:
-    """
-    Синхронный клиент для Deribit API.
-    Использует переданный httpx.Client для всех запросов (shared connection pool).
-
-    Args:
-        http_client: httpx.Client instance to use for HTTP requests
-    """
-
     BASE_URL = config.DERIBIT_API_BASE_URL.rstrip("/")
 
     def __init__(self, http_client: httpx.Client):
         self._client = http_client
 
     def get_index_price_time(self, ticker: str) -> tuple[Decimal, int]:
-        """
-        Получает текущую индексную цену для указанного тикера.
-
-        Args:
-            ticker: один из config.TICKERS
-
-        Returns:
-            tuple: Decimal, timestamp: int)
-
-        Raises:
-            ValueError: если тикер не поддерживается или ответ некорректный
-            httpx.HTTPError: ошибки сети / HTTP
-        """
-        if ticker not in config.TICKERS:
+        if ticker not in config.supported_tickers_set:
             raise ValueError(
-                f"Unsupported ticker: {ticker}. Must be one of: {config.TICKERS}"
+                "Unsupported ticker: "
+                f"{ticker}. Must be one of: {list(config.supported_tickers)}"
             )
 
         url = f"{self.BASE_URL}/public/get_index_price"
@@ -56,7 +36,6 @@ class SyncDeribitClient:
                 response.status_code,
             )
 
-            # Validate response structure
             result = data.get("result")
             if result is None:
                 raise ValueError(f"Missing 'result' field in API response: {data}")
