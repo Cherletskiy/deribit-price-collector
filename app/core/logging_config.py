@@ -1,29 +1,42 @@
+import json
 import logging
-from logging.handlers import RotatingFileHandler
+from datetime import UTC, datetime
+from typing import Any
 
 from app.core.config import config
 
 
-def setup_logger(name: str) -> logging.Logger:
-    logger = logging.getLogger(name)
-    level = logging.getLevelName(config.LOG_LEVEL.upper())
-    logger.setLevel(level)
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "logger": record.name,
+            "level": record.levelname,
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=True)
 
-    if not logger.handlers:
+
+def setup_logger(name: str) -> logging.Logger:
+    formatter: logging.Formatter
+    if config.LOG_JSON:
+        formatter = JsonFormatter()
+    else:
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
 
-        # Обработчик для вывода в терминал
+    root_logger = logging.getLogger()
+    if not root_logger.handlers:
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
-        logger.addHandler(stream_handler)
+        root_logger.addHandler(stream_handler)
+        root_logger.setLevel(logging.getLevelName(config.LOG_LEVEL.upper()))
 
-        # Обработчик для записи в файл с ротацией
-        file_handler = RotatingFileHandler(
-            "app.log", maxBytes=10_000_000, backupCount=5
-        )
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-
+    logger = logging.getLogger(name)
+    level = logging.getLevelName(config.LOG_LEVEL.upper())
+    logger.setLevel(level)
+    logger.propagate = True
     return logger

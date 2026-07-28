@@ -21,6 +21,8 @@ var/
 .env
 .git
 .gitignore
-README.md
-Dockerfile
-docker-compose.yml
+.venv
+.pytest_cache
+.mypy_cache
+htmlcov
+app.log

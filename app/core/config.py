@@ -20,6 +20,7 @@ class Config(BaseSettings):
     TICKERS: list[str] = Field(default_factory=lambda: ["btc_usd", "eth_usd"])
 
     LOG_LEVEL: str = Field(default="INFO")
+    LOG_JSON: bool = Field(default=False)
 
     @property
     def DATABASE_URL(self) -> str:
