@@ -53,6 +53,16 @@ class TestEndpoints:
         assert "path_counts" in data
         assert data["requests_total"] >= before_total
 
+    def test_runtime_metrics_prometheus(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/metrics/prometheus")
+
+        assert response.status_code == 200
+        assert "text/plain" in response.headers["content-type"]
+        assert "app_requests_total" in response.text
+        assert (
+            'app_request_path_total{path="/api/v1/metrics/prometheus"}' in response.text
+        )
+
     def test_get_supported_instruments(self, client_direct_mock):
         response = client_direct_mock.get("/api/v1/instruments")
 

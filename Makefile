@@ -1,6 +1,6 @@
 PYTHON := uv run
 
-.PHONY: setup format lint typecheck test check backfill
+.PHONY: setup format lint typecheck test check backfill reconcile
 
 setup:
 	uv sync --group dev
@@ -25,3 +25,6 @@ check:
 
 backfill:
 	$(PYTHON) -m collector.backfill --range $(RANGE)
+
+reconcile:
+	$(PYTHON) -m collector.reconcile --lookback-seconds $(LOOKBACK_SECONDS)

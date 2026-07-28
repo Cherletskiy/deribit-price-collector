@@ -44,5 +44,41 @@ class RuntimeMetrics:
                 "status_counts": dict(self._status_counts),
             }
 
+    def to_prometheus(self) -> str:
+        with self._lock:
+            lines = [
+                (
+                    "# HELP app_requests_in_progress "
+                    "Current number of in-progress HTTP requests."
+                ),
+                "# TYPE app_requests_in_progress gauge",
+                f"app_requests_in_progress {self._requests_in_progress}",
+                ("# HELP app_requests_total Total number of completed HTTP requests."),
+                "# TYPE app_requests_total counter",
+                f"app_requests_total {self._requests_total}",
+                (
+                    "# HELP app_requests_failed_total "
+                    "Total number of failed HTTP requests."
+                ),
+                "# TYPE app_requests_failed_total counter",
+                f"app_requests_failed_total {self._requests_failed}",
+                (
+                    "# HELP app_request_duration_ms_total "
+                    "Total HTTP request processing time in milliseconds."
+                ),
+                "# TYPE app_request_duration_ms_total counter",
+                f"app_request_duration_ms_total {self._request_durations_ms_total:.2f}",
+            ]
+
+            for path, count in sorted(self._path_counts.items()):
+                lines.append(f'app_request_path_total{{path="{path}"}} {count}')
+
+            for status_group, count in sorted(self._status_counts.items()):
+                lines.append(
+                    f'app_request_status_total{{status_group="{status_group}"}} {count}'
+                )
+
+            return "\n".join(lines) + "\n"
+
 
 runtime_metrics = RuntimeMetrics()

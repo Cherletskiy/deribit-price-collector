@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from itertools import islice
+from time import time
 
 import httpx
 from celery import Celery
@@ -41,8 +42,45 @@ celery_app.conf.beat_schedule = {
     "fetch-deribit-prices": {
         "task": "collector.tasks.dispatch_price_batches",
         "schedule": config.PRICE_FETCH_INTERVAL_SEC,
-    }
+    },
+    "reconcile-recent-prices": {
+        "task": "collector.tasks.reconcile_recent_prices",
+        "schedule": config.RECONCILIATION_INTERVAL_SEC,
+    },
 }
+
+
+def resolve_reconciliation_range(lookback_seconds: int) -> HistoryRange:
+    if lookback_seconds <= 3600:
+        return HistoryRange.ONE_HOUR
+    if lookback_seconds <= 86400:
+        return HistoryRange.ONE_DAY
+    if lookback_seconds <= 172800:
+        return HistoryRange.TWO_DAYS
+    if lookback_seconds <= 31 * 86400:
+        return HistoryRange.ONE_MONTH
+    if lookback_seconds <= 366 * 86400:
+        return HistoryRange.ONE_YEAR
+    return HistoryRange.ALL
+
+
+def has_missing_intervals(
+    timestamps: list[int],
+    expected_step_sec: int,
+    stale_multiplier: int,
+) -> bool:
+    if len(timestamps) < 2:
+        return False
+
+    max_allowed_gap = expected_step_sec * stale_multiplier
+    return any(
+        current_timestamp - previous_timestamp > max_allowed_gap
+        for previous_timestamp, current_timestamp in zip(
+            timestamps,
+            timestamps[1:],
+            strict=False,
+        )
+    )
 
 
 @celery_app.task(
@@ -64,6 +102,89 @@ def dispatch_price_batches() -> None:
 
     for batch in chunked(config.TICKERS, batch_size):
         fetch_price_batch.delay(batch)
+
+
+@celery_app.task(
+    expires=240,
+    name="collector.tasks.reconcile_recent_prices",
+)
+def reconcile_recent_prices(
+    tickers: list[str] | None = None,
+    lookback_seconds: int | None = None,
+) -> None:
+    selected_tickers = tickers or list(config.supported_tickers)
+    effective_lookback = lookback_seconds or config.RECONCILIATION_LOOKBACK_SEC
+    now_timestamp = int(time())
+    range_start = now_timestamp - effective_lookback
+    stale_multiplier = config.RECONCILIATION_STALE_MULTIPLIER
+    expected_step_sec = config.PRICE_FETCH_INTERVAL_SEC
+    backfill_tickers: list[str] = []
+
+    logger.info(
+        "Starting reconciliation | tickers=%s | lookback_seconds=%d",
+        selected_tickers,
+        effective_lookback,
+    )
+
+    session = SyncSessionLocal()
+    try:
+        repo = SyncPriceRepository(session)
+
+        for ticker in selected_tickers:
+            latest_timestamp = repo.get_latest_timestamp(ticker)
+            timestamps = repo.get_timestamps_in_range(
+                ticker=ticker,
+                timestamp_from=range_start,
+                timestamp_to=now_timestamp,
+            )
+
+            if latest_timestamp is None:
+                backfill_tickers.append(ticker)
+                logger.warning(
+                    "Reconciliation detected empty history | ticker=%s",
+                    ticker,
+                )
+                continue
+
+            if now_timestamp - latest_timestamp > expected_step_sec * stale_multiplier:
+                backfill_tickers.append(ticker)
+                logger.warning(
+                    (
+                        "Reconciliation detected stale latest price "
+                        "| ticker=%s | latest_timestamp=%d"
+                    ),
+                    ticker,
+                    latest_timestamp,
+                )
+                continue
+
+            if has_missing_intervals(
+                timestamps=timestamps,
+                expected_step_sec=expected_step_sec,
+                stale_multiplier=stale_multiplier,
+            ):
+                backfill_tickers.append(ticker)
+                logger.warning(
+                    "Reconciliation detected missing intervals | ticker=%s",
+                    ticker,
+                )
+
+        if not backfill_tickers:
+            logger.info("Reconciliation completed without gaps")
+            return
+
+        history_range = resolve_reconciliation_range(effective_lookback)
+        backfill_price_history.delay(
+            tickers=backfill_tickers,
+            range_name=history_range.value,
+        )
+        logger.info(
+            "Scheduled reconciliation backfill | tickers=%s | range=%s",
+            backfill_tickers,
+            history_range.value,
+        )
+    finally:
+        session.close()
 
 
 @celery_app.task(

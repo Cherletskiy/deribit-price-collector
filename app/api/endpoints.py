@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import config
@@ -42,6 +43,14 @@ async def readiness_check() -> dict[str, str]:
 @router.get("/metrics")
 async def get_runtime_metrics() -> dict[str, object]:
     return runtime_metrics.snapshot()
+
+
+@router.get("/metrics/prometheus", response_class=PlainTextResponse)
+async def get_runtime_metrics_prometheus() -> PlainTextResponse:
+    return PlainTextResponse(
+        content=runtime_metrics.to_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @router.get("/instruments")

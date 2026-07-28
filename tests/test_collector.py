@@ -16,6 +16,9 @@ from collector.tasks import (
     backfill_price_history,
     chunked,
     fetch_price_batch,
+    has_missing_intervals,
+    reconcile_recent_prices,
+    resolve_reconciliation_range,
 )
 
 
@@ -362,6 +365,86 @@ class TestFetchPriceBatch:
 
 
 def test_chunked_splits_correctly():
-    """chunked правильно делит список на батчи"""
     result = list(chunked([1, 2, 3, 4, 5], 2))
     assert result == [[1, 2], [3, 4], [5]]
+
+
+def test_has_missing_intervals_detects_gap():
+    assert has_missing_intervals(
+        timestamps=[100, 160, 340],
+        expected_step_sec=60,
+        stale_multiplier=2,
+    )
+
+
+def test_has_missing_intervals_accepts_regular_series():
+    assert not has_missing_intervals(
+        timestamps=[100, 160, 220],
+        expected_step_sec=60,
+        stale_multiplier=2,
+    )
+
+
+def test_resolve_reconciliation_range():
+    assert resolve_reconciliation_range(3600) == IndexChartRange.ONE_HOUR
+    assert resolve_reconciliation_range(86400) == IndexChartRange.ONE_DAY
+    assert resolve_reconciliation_range(172800) == IndexChartRange.TWO_DAYS
+
+
+class TestReconcileRecentPrices:
+    def test_reconcile_recent_prices_schedules_backfill_for_stale_data(self):
+        mock_session = Mock()
+        mock_repo = Mock()
+        mock_repo.get_latest_timestamp.return_value = 1_000
+        mock_repo.get_timestamps_in_range.return_value = [940, 1000]
+
+        with (
+            patch("collector.tasks.time", return_value=1_200),
+            patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+            patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+            patch("collector.tasks.backfill_price_history.delay") as mock_delay,
+        ):
+            reconcile_recent_prices(["btc_usd"], lookback_seconds=3600)
+
+            mock_delay.assert_called_once_with(
+                tickers=["btc_usd"],
+                range_name="1h",
+            )
+            mock_session.close.assert_called_once()
+
+    def test_reconcile_recent_prices_schedules_backfill_for_gap(self):
+        mock_session = Mock()
+        mock_repo = Mock()
+        mock_repo.get_latest_timestamp.return_value = 1_190
+        mock_repo.get_timestamps_in_range.return_value = [1000, 1060, 1300]
+
+        with (
+            patch("collector.tasks.time", return_value=1_200),
+            patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+            patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+            patch("collector.tasks.backfill_price_history.delay") as mock_delay,
+        ):
+            reconcile_recent_prices(["btc_usd"], lookback_seconds=86400)
+
+            mock_delay.assert_called_once_with(
+                tickers=["btc_usd"],
+                range_name="1d",
+            )
+            mock_session.close.assert_called_once()
+
+    def test_reconcile_recent_prices_skips_backfill_for_healthy_data(self):
+        mock_session = Mock()
+        mock_repo = Mock()
+        mock_repo.get_latest_timestamp.return_value = 1_190
+        mock_repo.get_timestamps_in_range.return_value = [1000, 1060, 1120, 1180]
+
+        with (
+            patch("collector.tasks.time", return_value=1_200),
+            patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+            patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+            patch("collector.tasks.backfill_price_history.delay") as mock_delay,
+        ):
+            reconcile_recent_prices(["btc_usd"], lookback_seconds=86400)
+
+            mock_delay.assert_not_called()
+            mock_session.close.assert_called_once()

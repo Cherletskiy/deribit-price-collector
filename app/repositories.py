@@ -98,3 +98,29 @@ class SyncPriceRepository:
 
         obj.price = price
         return obj
+
+    def get_latest_timestamp(self, ticker: str) -> int | None:
+        stmt = (
+            select(Price.timestamp)
+            .where(Price.ticker == ticker)
+            .order_by(Price.timestamp.desc())
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def get_timestamps_in_range(
+        self,
+        ticker: str,
+        timestamp_from: int,
+        timestamp_to: int,
+    ) -> list[int]:
+        stmt = (
+            select(Price.timestamp)
+            .where(
+                Price.ticker == ticker,
+                Price.timestamp >= timestamp_from,
+                Price.timestamp <= timestamp_to,
+            )
+            .order_by(Price.timestamp.asc())
+        )
+        return list(self.session.execute(stmt).scalars().all())
