@@ -81,6 +81,7 @@ The service is split into two execution paths:
 - `GET /api/v1/readyz`
 - `GET /api/v1/metrics`
 - `GET /api/v1/metrics/prometheus`
+- provisioned Grafana dashboard: `Deribit API Runtime Overview`
 - request ID propagation via `X-Request-ID`
 
 ## Project layout
@@ -127,10 +128,17 @@ docker compose up --build
 Services:
 
 - API: `http://localhost:8000`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
 - PostgreSQL
 - Redis
 - Celery worker
 - Celery beat
+
+Grafana login:
+
+- username: `admin`
+- password: `admin`
 
 ## Local development
 
