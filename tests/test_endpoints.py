@@ -51,6 +51,11 @@ class TestEndpoints:
         assert "requests_total" in data
         assert "requests_failed" in data
         assert "path_counts" in data
+        assert "business" in data
+        assert data["business"]["total_prices"] == 15
+        assert data["business"]["counts_by_ticker"]["btc_usd"] == 10
+        assert data["business"]["counts_by_ticker"]["eth_usd"] == 5
+        assert "btc_usd" in data["business"]["latest_prices"]
         assert data["requests_total"] >= before_total
 
     def test_runtime_metrics_prometheus(self, client_direct_mock):
@@ -59,6 +64,12 @@ class TestEndpoints:
         assert response.status_code == 200
         assert "text/plain" in response.headers["content-type"]
         assert "app_requests_total" in response.text
+        assert "app_prices_stored_total 15" in response.text
+        assert 'app_price_points_total{ticker="btc_usd"} 10' in response.text
+        assert 'app_price_points_total{ticker="eth_usd"} 5' in response.text
+        assert 'app_latest_price_value{ticker="btc_usd"} 59000.00' in response.text
+        assert 'app_latest_price_timestamp{ticker="btc_usd"}' in response.text
+        assert 'app_data_freshness_seconds{ticker="btc_usd"}' in response.text
         assert (
             'app_request_path_total{path="/api/v1/metrics/prometheus"}' in response.text
         )

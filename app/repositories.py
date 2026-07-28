@@ -1,7 +1,7 @@
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -78,6 +78,40 @@ class AsyncPriceRepository:
 
         result = await self.session.scalars(stmt)
         return list(result.all())
+
+    async def get_total_prices_count(self) -> int:
+        stmt = select(func.count(Price.id))
+        result = await self.session.scalar(stmt)
+        return int(result or 0)
+
+    async def get_counts_by_ticker(self) -> dict[str, int]:
+        stmt = select(Price.ticker, func.count(Price.id)).group_by(Price.ticker)
+        result = await self.session.execute(stmt)
+        return {ticker: int(count) for ticker, count in result.all()}
+
+    async def get_latest_prices_by_ticker(self) -> dict[str, Price]:
+        latest_timestamp_subquery = (
+            select(
+                Price.ticker.label("ticker"),
+                func.max(Price.timestamp).label("latest_timestamp"),
+            )
+            .group_by(Price.ticker)
+            .subquery()
+        )
+
+        stmt = (
+            select(Price)
+            .join(
+                latest_timestamp_subquery,
+                (Price.ticker == latest_timestamp_subquery.c.ticker)
+                & (Price.timestamp == latest_timestamp_subquery.c.latest_timestamp),
+            )
+            .order_by(Price.ticker.asc())
+        )
+
+        result = await self.session.scalars(stmt)
+        latest_prices = list(result.all())
+        return {price.ticker: price for price in latest_prices}
 
 
 class SyncPriceRepository:

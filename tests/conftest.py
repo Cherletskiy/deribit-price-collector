@@ -223,6 +223,15 @@ def mock_price_repository(mock_price_models):
     repository.get_by_ticker_and_date_range.side_effect = (
         get_by_ticker_and_date_range_side_effect
     )
+    repository.get_total_prices_count.return_value = len(mock_price_models)
+    repository.get_counts_by_ticker.return_value = {
+        "btc_usd": len(btc_models),
+        "eth_usd": len(eth_models),
+    }
+    repository.get_latest_prices_by_ticker.return_value = {
+        "btc_usd": max(btc_models, key=lambda item: item.timestamp),
+        "eth_usd": max(eth_models, key=lambda item: item.timestamp),
+    }
 
     return repository
 

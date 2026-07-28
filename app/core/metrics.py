@@ -1,5 +1,70 @@
 from collections import Counter
+from collections.abc import Mapping
+from decimal import Decimal
 from threading import Lock
+from time import time
+from typing import Protocol
+
+
+class PriceSnapshot(Protocol):
+    price: Decimal
+    timestamp: int
+
+
+def build_business_metrics_snapshot(
+    total_prices: int,
+    counts_by_ticker: dict[str, int],
+    latest_prices_by_ticker: Mapping[str, PriceSnapshot],
+) -> dict[str, object]:
+    now_timestamp = int(time())
+    latest_prices: dict[str, dict[str, object]] = {}
+
+    for ticker, price_entry in latest_prices_by_ticker.items():
+        latest_timestamp = int(price_entry.timestamp)
+        latest_prices[ticker] = {
+            "price": str(price_entry.price),
+            "timestamp": latest_timestamp,
+            "freshness_seconds": max(now_timestamp - latest_timestamp, 0),
+        }
+
+    return {
+        "total_prices": total_prices,
+        "counts_by_ticker": counts_by_ticker,
+        "latest_prices": latest_prices,
+    }
+
+
+def business_snapshot_to_prometheus(snapshot: dict[str, object]) -> str:
+    total_prices_value = snapshot.get("total_prices", 0)
+    total_prices = int(total_prices_value) if isinstance(total_prices_value, int) else 0
+    lines = [
+        "# HELP app_prices_stored_total Total number of stored price points.",
+        "# TYPE app_prices_stored_total gauge",
+        f"app_prices_stored_total {total_prices}",
+    ]
+
+    counts_by_ticker = snapshot["counts_by_ticker"]
+    if isinstance(counts_by_ticker, dict):
+        for ticker, count in sorted(counts_by_ticker.items()):
+            lines.append(f'app_price_points_total{{ticker="{ticker}"}} {int(count)}')
+
+    latest_prices = snapshot["latest_prices"]
+    if isinstance(latest_prices, dict):
+        for ticker, payload in sorted(latest_prices.items()):
+            if not isinstance(payload, dict):
+                continue
+            price = payload.get("price", "0")
+            timestamp = int(payload.get("timestamp", 0))
+            freshness_seconds = int(payload.get("freshness_seconds", 0))
+            lines.append(
+                f'app_latest_price_value{{ticker="{ticker}"}} {Decimal(str(price))}'
+            )
+            lines.append(f'app_latest_price_timestamp{{ticker="{ticker}"}} {timestamp}')
+            lines.append(
+                f'app_data_freshness_seconds{{ticker="{ticker}"}} {freshness_seconds}'
+            )
+
+    return "\n".join(lines) + "\n"
 
 
 class RuntimeMetrics:

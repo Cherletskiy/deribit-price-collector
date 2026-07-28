@@ -4,7 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import config
 from app.core.db import get_async_session, ping_db
-from app.core.metrics import runtime_metrics
+from app.core.metrics import (
+    build_business_metrics_snapshot,
+    business_snapshot_to_prometheus,
+    runtime_metrics,
+)
 from app.repositories import AsyncPriceRepository
 from app.schemas import (
     CandleQuery,
@@ -41,14 +45,35 @@ async def readiness_check() -> dict[str, str]:
 
 
 @router.get("/metrics")
-async def get_runtime_metrics() -> dict[str, object]:
-    return runtime_metrics.snapshot()
+async def get_runtime_metrics(
+    db: AsyncSession = Depends(get_async_session),
+) -> dict[str, object]:
+    repo = AsyncPriceRepository(db)
+    business_snapshot = build_business_metrics_snapshot(
+        total_prices=await repo.get_total_prices_count(),
+        counts_by_ticker=await repo.get_counts_by_ticker(),
+        latest_prices_by_ticker=await repo.get_latest_prices_by_ticker(),
+    )
+
+    return {
+        **runtime_metrics.snapshot(),
+        "business": business_snapshot,
+    }
 
 
 @router.get("/metrics/prometheus", response_class=PlainTextResponse)
-async def get_runtime_metrics_prometheus() -> PlainTextResponse:
+async def get_runtime_metrics_prometheus(
+    db: AsyncSession = Depends(get_async_session),
+) -> PlainTextResponse:
+    repo = AsyncPriceRepository(db)
+    business_snapshot = build_business_metrics_snapshot(
+        total_prices=await repo.get_total_prices_count(),
+        counts_by_ticker=await repo.get_counts_by_ticker(),
+        latest_prices_by_ticker=await repo.get_latest_prices_by_ticker(),
+    )
     return PlainTextResponse(
-        content=runtime_metrics.to_prometheus(),
+        content=runtime_metrics.to_prometheus()
+        + business_snapshot_to_prometheus(business_snapshot),
         media_type="text/plain; version=0.0.4; charset=utf-8",
     )
 
