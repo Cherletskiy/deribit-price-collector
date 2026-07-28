@@ -6,7 +6,9 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.config import config
+from app.core.instruments import supported_ticker_set
 from app.repositories import SortOrder
+from collector.providers import MarketDataProviderName
 
 
 class PriceResponse(BaseModel):
@@ -26,6 +28,19 @@ class ErrorResponse(BaseModel):
     message: str
     request_id: str
     details: list[dict[str, Any]] | dict[str, Any] | None = None
+
+
+class ProviderResponse(BaseModel):
+    name: MarketDataProviderName
+    display_name: str
+    base_url: str
+    supported_tickers: list[str]
+    supports_backfill: bool
+
+
+class InstrumentResponse(BaseModel):
+    ticker: str
+    provider: MarketDataProviderName
 
 
 class CandleInterval(StrEnum):
@@ -83,7 +98,7 @@ class TickerQuery(BaseModel):
     @field_validator("ticker")
     @classmethod
     def validate_ticker(cls, value: str) -> str:
-        if value not in config.supported_tickers_set:
+        if value not in supported_ticker_set():
             supported = ", ".join(config.supported_tickers)
             raise ValueError(f"Ticker must be one of: {supported}")
         return value

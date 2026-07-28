@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from collector.client import IndexChartRange
+from collector.client import IndexChartRange, SyncDeribitClient
 from collector.exceptions import (
     DeribitRequestError,
     DeribitResponseError,
@@ -13,7 +13,6 @@ from collector.exceptions import (
     UnsupportedTickerError,
 )
 from collector.tasks import (
-    SyncDeribitClient,
     backfill_price_history,
     chunked,
     fetch_price_batch,
@@ -119,13 +118,13 @@ class TestSyncDeribitClient:
 
 class TestFetchPriceBatch:
     def test_fetch_price_batch_all_success(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = [
                 (Decimal("50000"), 1234567890),
                 (Decimal("3500"), 1234567890),
             ]
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -146,13 +145,13 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_partial_success(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = [
                 (Decimal("50000"), 1234567890),
                 DeribitRequestError("API error"),
             ]
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -175,12 +174,12 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_all_transient_failures(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = DeribitRequestError(
                 "API down"
             )
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -205,12 +204,12 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_all_permanent_failures(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = UnsupportedTickerError(
                 "Unsupported ticker"
             )
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -235,13 +234,13 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_updates_existing_price(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.return_value = (
                 Decimal("51000"),
                 1234567890,
             )
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -268,13 +267,13 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_commit_failure_raises_transient_error(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_price_time.return_value = (
                 Decimal("51000"),
                 1234567890,
             )
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_session.commit.side_effect = RuntimeError("db unavailable")
@@ -297,13 +296,13 @@ class TestFetchPriceBatch:
                 mock_session.close.assert_called_once()
 
     def test_backfill_price_history_success(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_chart_data.return_value = [
                 (Decimal("50000.00"), 1_609_459_200),
                 (Decimal("51000.00"), 1_609_545_600),
             ]
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()
@@ -335,12 +334,12 @@ class TestFetchPriceBatch:
             mock_session.close.assert_called_once()
 
     def test_backfill_price_history_transient_failure(self):
-        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+        with patch("collector.tasks.build_sync_market_data_provider") as MockProvider:
             mock_client = Mock()
             mock_client.get_index_chart_data.side_effect = DeribitRequestError(
                 "network"
             )
-            MockClient.return_value = mock_client
+            MockProvider.return_value = mock_client
 
             mock_session = Mock()
             mock_repo = Mock()

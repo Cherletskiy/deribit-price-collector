@@ -13,6 +13,7 @@ class Config(BaseSettings):
     REDIS_PORT: int = Field(default=6379)
     REDIS_DB: int = Field(default=0)
 
+    MARKET_DATA_PROVIDER: str = Field(default="deribit")
     DERIBIT_API_BASE_URL: str = Field(default="https://www.deribit.com/api/v2")
     DERIBIT_API_TIMEOUT_SEC: int = Field(default=10)
     PRICE_FETCH_INTERVAL_SEC: int = Field(default=60)

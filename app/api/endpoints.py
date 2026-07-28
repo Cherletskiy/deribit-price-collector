@@ -9,14 +9,21 @@ from app.schemas import (
     CandleQuery,
     CandleResponse,
     ErrorResponse,
+    InstrumentResponse,
     PriceByDateQuery,
     PriceResponse,
     PriceSummaryQuery,
     PriceSummaryResponse,
+    ProviderResponse,
     TickerQuery,
     TickerWithPaginationQuery,
 )
 from app.services import PriceService
+from collector.providers import (
+    get_active_provider_metadata,
+    list_provider_metadata,
+    list_supported_instruments,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["prices"])
 
@@ -40,6 +47,40 @@ async def get_runtime_metrics() -> dict[str, object]:
 @router.get("/instruments")
 async def get_supported_instruments() -> list[str]:
     return list(config.supported_tickers)
+
+
+@router.get("/instruments/details")
+async def get_supported_instrument_details() -> list[InstrumentResponse]:
+    return [
+        InstrumentResponse(ticker=item.ticker, provider=item.provider)
+        for item in list_supported_instruments()
+    ]
+
+
+@router.get("/providers")
+async def get_supported_providers() -> list[ProviderResponse]:
+    return [
+        ProviderResponse(
+            name=item.name,
+            display_name=item.display_name,
+            base_url=item.base_url,
+            supported_tickers=list(item.supported_tickers),
+            supports_backfill=item.supports_backfill,
+        )
+        for item in list_provider_metadata()
+    ]
+
+
+@router.get("/providers/active")
+async def get_active_provider() -> ProviderResponse:
+    item = get_active_provider_metadata()
+    return ProviderResponse(
+        name=item.name,
+        display_name=item.display_name,
+        base_url=item.base_url,
+        supported_tickers=list(item.supported_tickers),
+        supports_backfill=item.supports_backfill,
+    )
 
 
 @router.get(

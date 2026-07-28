@@ -1,5 +1,4 @@
 from decimal import Decimal
-from enum import StrEnum
 
 import httpx
 
@@ -10,21 +9,16 @@ from collector.exceptions import (
     DeribitResponseError,
     UnsupportedTickerError,
 )
+from collector.providers import HistoryRange, MarketDataProviderName
 
 logger = setup_logger(__name__)
 
-
-class IndexChartRange(StrEnum):
-    ONE_HOUR = "1h"
-    ONE_DAY = "1d"
-    TWO_DAYS = "2d"
-    ONE_MONTH = "1m"
-    ONE_YEAR = "1y"
-    ALL = "all"
+IndexChartRange = HistoryRange
 
 
 class SyncDeribitClient:
     BASE_URL = config.DERIBIT_API_BASE_URL.rstrip("/")
+    provider_name = MarketDataProviderName.DERIBIT
 
     def __init__(self, http_client: httpx.Client):
         self._client = http_client
@@ -97,7 +91,7 @@ class SyncDeribitClient:
     def get_index_chart_data(
         self,
         ticker: str,
-        range_name: IndexChartRange,
+        range_name: HistoryRange,
     ) -> list[tuple[Decimal, int]]:
         if ticker not in config.supported_tickers_set:
             raise UnsupportedTickerError(

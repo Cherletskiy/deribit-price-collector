@@ -59,6 +59,32 @@ class TestEndpoints:
         assert response.status_code == 200
         assert response.json() == ["btc_usd", "eth_usd"]
 
+    def test_get_supported_instrument_details(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/instruments/details")
+
+        assert response.status_code == 200
+        assert response.json() == [
+            {"ticker": "btc_usd", "provider": "deribit"},
+            {"ticker": "eth_usd", "provider": "deribit"},
+        ]
+
+    def test_get_supported_providers(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/providers")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["name"] == "deribit"
+        assert data[0]["display_name"] == "Deribit"
+        assert data[0]["supported_tickers"] == ["btc_usd", "eth_usd"]
+        assert data[0]["supports_backfill"] is True
+
+    def test_get_active_provider(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/providers/active")
+
+        assert response.status_code == 200
+        assert response.json()["name"] == "deribit"
+
     def test_get_all_prices_success(self, client_direct_mock, mock_price_repository):
         response = client_direct_mock.get(
             "/api/v1/prices", params={"ticker": "btc_usd"}

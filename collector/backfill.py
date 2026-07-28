@@ -1,7 +1,7 @@
 import argparse
 
 from app.core.config import config
-from collector.client import IndexChartRange
+from collector.providers import HistoryRange
 from collector.tasks import backfill_price_history
 
 
@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--range",
         dest="range_name",
-        choices=[item.value for item in IndexChartRange],
+        choices=[item.value for item in HistoryRange],
         required=True,
     )
     return parser

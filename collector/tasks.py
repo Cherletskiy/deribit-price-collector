@@ -8,13 +8,13 @@ from app.core.config import config
 from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
 from app.repositories import SyncPriceRepository
-from collector.client import IndexChartRange, SyncDeribitClient
 from collector.exceptions import (
     PriceBatchPermanentError,
     PriceBatchTransientError,
     PriceCollectionPermanentError,
     PriceCollectionTransientError,
 )
+from collector.providers import HistoryRange, build_sync_market_data_provider
 
 logger = setup_logger(__name__)
 
@@ -87,7 +87,7 @@ def fetch_price_batch(tickers: list[str]) -> None:
         repo = SyncPriceRepository(session)
 
         with httpx.Client(timeout=config.DERIBIT_API_TIMEOUT_SEC) as http_client:
-            client = SyncDeribitClient(http_client)
+            client = build_sync_market_data_provider(http_client)
 
             for ticker in tickers:
                 try:
@@ -186,10 +186,10 @@ def backfill_price_history(
     total_saved = 0
     try:
         repo = SyncPriceRepository(session)
-        chart_range = IndexChartRange(range_name)
+        chart_range = HistoryRange(range_name)
 
         with httpx.Client(timeout=config.DERIBIT_API_TIMEOUT_SEC) as http_client:
-            client = SyncDeribitClient(http_client)
+            client = build_sync_market_data_provider(http_client)
 
             for ticker in tickers:
                 try:
