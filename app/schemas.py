@@ -2,8 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import (BaseModel, ConfigDict, Field, field_validator,
-                      model_validator)
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.repositories import SortOrder
 
@@ -52,7 +51,8 @@ class PriceByDateQuery(TickerWithPaginationQuery):
         if v is not None:
             if v < 0 or v > 2_500_000_000:
                 raise ValueError(
-                    "Timestamp must be a valid UNIX timestamp (0 <= timestamp <= 2500000000)"
+                    "Timestamp must be a valid UNIX timestamp "
+                    "(0 <= timestamp <= 2500000000)"
                 )
         return v
 

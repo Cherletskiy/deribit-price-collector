@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -87,13 +87,11 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch(
-                "collector.tasks.SyncSessionLocal", return_value=mock_session
-            ), patch(
-                "collector.tasks.SyncPriceRepository", return_value=mock_repo
-            ), patch(
-                "collector.tasks.httpx.Client"
-            ) as MockHttpClient:
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
                 # Мокаем httpx.Client контекстный менеджер
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
@@ -121,13 +119,11 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch(
-                "collector.tasks.SyncSessionLocal", return_value=mock_session
-            ), patch(
-                "collector.tasks.SyncPriceRepository", return_value=mock_repo
-            ), patch(
-                "collector.tasks.httpx.Client"
-            ) as MockHttpClient:
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
                 # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
@@ -159,13 +155,11 @@ class TestFetchPriceBatch:
 
             mock_session = Mock()
             mock_repo = Mock()
-            with patch(
-                "collector.tasks.SyncSessionLocal", return_value=mock_session
-            ), patch(
-                "collector.tasks.SyncPriceRepository", return_value=mock_repo
-            ), patch(
-                "collector.tasks.httpx.Client"
-            ) as MockHttpClient:
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
                 # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client

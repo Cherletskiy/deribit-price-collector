@@ -1,18 +1,14 @@
-import os
-from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
-from alembic import context
-from app.models import Base
-from app.core.config import config as config_env
 
+from alembic import context
+from app.core.config import config as config_env
+from app.models import Base
 
 config = context.config
 
-# Заменяем asyncpg на sync драйвер для миграций
 sync_dsn = config_env.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
 config.set_main_option("sqlalchemy.url", sync_dsn)
 
-# Set target metadata
 target_metadata = Base.metadata
 
 
@@ -26,7 +22,8 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
-def run_migrations_online():
+
+def run_migrations_online() -> None:
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
@@ -36,6 +33,7 @@ def run_migrations_online():
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

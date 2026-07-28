@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 class TestAsyncPriceRepository:
     """Интеграционные тесты для AsyncPriceRepository"""
 

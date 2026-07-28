@@ -3,8 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_async_session
 from app.repositories import AsyncPriceRepository
-from app.schemas import (PriceByDateQuery, PriceResponse, TickerQuery,
-                         TickerWithPaginationQuery)
+from app.schemas import (
+    PriceByDateQuery,
+    PriceResponse,
+    TickerQuery,
+    TickerWithPaginationQuery,
+)
 from app.services import PriceService
 
 router = APIRouter(prefix="/api/v1", tags=["prices"])

@@ -37,7 +37,9 @@ class SyncDeribitClient:
             httpx.HTTPError: ошибки сети / HTTP
         """
         if ticker not in config.TICKERS:
-            raise ValueError(f"Unsupported ticker: {ticker}. Must be one of: {config.TICKERS}")
+            raise ValueError(
+                f"Unsupported ticker: {ticker}. Must be one of: {config.TICKERS}"
+            )
 
         url = f"{self.BASE_URL}/public/get_index_price"
         params = {"index_name": ticker}
@@ -92,4 +94,6 @@ class SyncDeribitClient:
                 ticker,
                 exc,
             )
-            raise ValueError(f"Failed to parse API response for {ticker}: {exc}") from exc
+            raise ValueError(
+                f"Failed to parse API response for {ticker}: {exc}"
+            ) from exc

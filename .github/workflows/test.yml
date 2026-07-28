@@ -16,23 +16,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
         with:
           python-version: "3.12"
 
-      - name: Cache pip
+      - name: Cache uv
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: ${{ runner.os }}-pip-
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-uv-
 
       - name: Install dependencies
         run: |
-          python -V
-          pip install --upgrade pip
-          pip install -r requirements.txt
+          uv sync --group dev
 
-      - name: Run tests
-        run: pytest --cov
+      - name: Run checks
+        run: make check

@@ -1,22 +1,23 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
-import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy import StaticPool, create_engine
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.core.db import Base
+from app.core.db import Base, get_async_session
 from app.main import app
 from app.models import Price
 from app.repositories import AsyncPriceRepository, SortOrder
 
 
 # Фикстуры для моков
-@pytest_asyncio.fixture()
+@pytest.fixture
 async def async_engine():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -30,7 +31,7 @@ async def async_engine():
     await engine.dispose()
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest.fixture(autouse=True)
 async def create_db_schema(async_engine):
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -39,7 +40,7 @@ async def create_db_schema(async_engine):
         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def async_session(async_engine):
     session_maker = async_sessionmaker(
         async_engine,
@@ -50,12 +51,12 @@ async def async_session(async_engine):
         yield session
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def test_async_price_repository(async_session):
     return AsyncPriceRepository(async_session)
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def sample_price_data(async_session):
     prices = [
         Price(
@@ -79,6 +80,11 @@ async def sample_price_data(async_session):
     await async_session.commit()
 
     return prices
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture
@@ -142,14 +148,14 @@ def mock_price_data():
 
 @pytest.fixture
 def mock_price_models(mock_price_data):
-    """Фиктивные ORM модели"""
     models = []
     for data in mock_price_data:
-        mock_model = MagicMock()
-        mock_model.ticker = data["ticker"]
-        mock_model.price = data["price"]
-        mock_model.timestamp = data["timestamp"]
-        mock_model.created_at = data["created_at"]
+        mock_model = SimpleNamespace(
+            ticker=data["ticker"],
+            price=data["price"],
+            timestamp=data["timestamp"],
+            created_at=data["created_at"],
+        )
         models.append(mock_model)
     return models
 
@@ -223,14 +229,22 @@ def mock_price_repository(mock_price_models):
 
 @pytest.fixture
 def client_direct_mock(mock_price_repository):
-    """Клиент с прямым моком репозитория в эндпоинтах"""
-    # Мокаем инициализацию БД в lifespan
-    with patch("app.main.init_db") as mock_init_db:
-        mock_init_db.return_value = None
+    async def override_async_session():
+        yield None
 
-        # Мокаем создание репозитория ВНУТРИ эндпоинта
-        with patch("app.api.endpoints.AsyncPriceRepository") as mock_repo_class:
-            mock_repo_class.return_value = mock_price_repository
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
 
-            with TestClient(app) as test_client:
-                yield test_client
+    app.dependency_overrides[get_async_session] = override_async_session
+
+    with (
+        patch.object(app.router, "lifespan_context", noop_lifespan),
+        patch("app.api.endpoints.AsyncPriceRepository") as mock_repo_class,
+    ):
+        mock_repo_class.return_value = mock_price_repository
+
+        with TestClient(app) as test_client:
+            yield test_client
+
+    app.dependency_overrides.clear()

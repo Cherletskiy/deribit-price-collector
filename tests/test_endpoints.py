@@ -1,8 +1,11 @@
+from contextlib import asynccontextmanager
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.db import get_async_session
 from app.main import app
 from app.repositories import SortOrder
 from app.schemas import PriceResponse
@@ -54,7 +57,8 @@ class TestEndpoints:
 
         try:
             response = client_direct_mock.get(
-                "/api/v1/prices", params={"ticker": "eth_usd"}  # или "non_existent"
+                "/api/v1/prices",
+                params={"ticker": "eth_usd"},  # или "non_existent"
             )
 
             assert response.status_code == 404
@@ -468,8 +472,22 @@ class TestQueryParameters:
 
     @pytest.fixture
     def simple_client(self):
-        """Простой клиент без моков для тестов валидации"""
-        return TestClient(app)
+        async def override_async_session():
+            yield None
+
+        @asynccontextmanager
+        async def noop_lifespan(_app):
+            yield
+
+        app.dependency_overrides[get_async_session] = override_async_session
+
+        with (
+            patch.object(app.router, "lifespan_context", noop_lifespan),
+            TestClient(app) as test_client,
+        ):
+            yield test_client
+
+        app.dependency_overrides.clear()
 
     def test_ticker_case_sensitivity(self, simple_client):
         """Проверка чувствительности к регистру тикера"""
@@ -502,13 +520,13 @@ class TestQueryParameters:
 
         with patch("app.api.endpoints.AsyncPriceRepository", return_value=mock_repo):
             response = simple_client.get("/api/v1/prices", params={"ticker": "btc_usd"})
+            assert response.status_code == 404
 
-            # Проверяем, что вызвался с значениями по умолчанию
             mock_repo.get_all_by_ticker.assert_called_once_with(
                 ticker="btc_usd",
-                limit=50,  # значение по умолчанию
-                offset=0,  # значение по умолчанию
-                sorting=SortOrder.ASC,  # значение по умолчанию
+                limit=50,
+                offset=0,
+                sorting=SortOrder.ASC,
             )
 
 

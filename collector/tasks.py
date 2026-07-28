@@ -1,5 +1,5 @@
+from collections.abc import Iterable
 from itertools import islice
-from typing import Iterable
 
 import httpx
 from celery import Celery
@@ -51,7 +51,9 @@ def dispatch_price_batches() -> None:
     batch_size = config.PRICE_BATCH_SIZE
 
     logger.debug(
-        f"Dispatching price fetch tasks | tickers_total: {len(config.TICKERS)} | batch_size: {batch_size}"
+        "Dispatching price fetch tasks | tickers_total=%d | batch_size=%d",
+        len(config.TICKERS),
+        batch_size,
     )
 
     for batch in chunked(config.TICKERS, batch_size):
