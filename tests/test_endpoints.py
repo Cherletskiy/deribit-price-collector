@@ -531,22 +531,20 @@ class TestQueryParameters:
 
 
 def test_response_schema_validation():
-    """Проверка схемы ответа"""
-    price_response_data = {
+    price_response_data: dict[str, str | int] = {
         "ticker": "btc_usd",
         "price": "50000.00",
         "timestamp": 1609459200,
         "created_at": "2021-01-01T00:00:00",
     }
 
-    price_response = PriceResponse(**price_response_data)
+    price_response = PriceResponse.model_validate(price_response_data)
     assert price_response.ticker == "btc_usd"
     assert price_response.price == Decimal("50000.00")
 
-    # Проверяем валидацию лишних полей
     invalid_data = price_response_data.copy()
     invalid_data["extra_field"] = "should_fail"
 
     with pytest.raises(ValueError) as exc_info:
-        PriceResponse(**invalid_data)
+        PriceResponse.model_validate(invalid_data)
     assert "extra_field" in str(exc_info.value)

@@ -13,7 +13,7 @@ from collector.client import SyncDeribitClient
 logger = setup_logger(__name__)
 
 
-def chunked(iterable: Iterable[str], size: int) -> Iterable[list[str]]:
+def chunked[T](iterable: Iterable[T], size: int) -> Iterable[list[T]]:
     """
     Делит iterable на чанки фиксированного размера.
     """

@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
@@ -24,8 +26,9 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    section = cast(dict[str, Any], config.get_section(config.config_ini_section))
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

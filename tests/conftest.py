@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -120,7 +120,7 @@ def test_db_sync_session(sync_engine):
 @pytest.fixture
 def mock_price_data():
     """Фиктивные данные о ценах (10 записей для тестирования пагинации)"""
-    base_date = datetime(2021, 1, 1, 0, 0, 0)
+    base_date = datetime(2021, 1, 1, 0, 0, 0, tzinfo=UTC)
     prices = []
 
     # Создаем 10 записей с разными датами и ценами
