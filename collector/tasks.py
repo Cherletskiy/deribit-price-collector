@@ -8,7 +8,7 @@ from app.core.config import config
 from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
 from app.repositories import SyncPriceRepository
-from collector.client import SyncDeribitClient
+from collector.client import IndexChartRange, SyncDeribitClient
 from collector.exceptions import (
     PriceBatchPermanentError,
     PriceBatchTransientError,
@@ -158,6 +158,77 @@ def fetch_price_batch(tickers: list[str]) -> None:
         session.rollback()
         raise PriceBatchTransientError(
             f"Unexpected batch failure for tickers {tickers}: {exc}"
+        ) from exc
+    finally:
+        session.close()
+
+
+@celery_app.task(
+    autoretry_for=(PriceBatchTransientError,),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
+    expires=300,
+    name="collector.tasks.backfill_price_history",
+)
+def backfill_price_history(
+    tickers: list[str],
+    range_name: str,
+) -> None:
+    logger.info(
+        "Starting backfill | tickers=%s | range=%s",
+        tickers,
+        range_name,
+    )
+
+    session = SyncSessionLocal()
+    total_saved = 0
+    try:
+        repo = SyncPriceRepository(session)
+        chart_range = IndexChartRange(range_name)
+
+        with httpx.Client(timeout=config.DERIBIT_API_TIMEOUT_SEC) as http_client:
+            client = SyncDeribitClient(http_client)
+
+            for ticker in tickers:
+                try:
+                    points = client.get_index_chart_data(ticker, chart_range)
+                except PriceCollectionPermanentError as exc:
+                    logger.error(
+                        "Permanent backfill failure | ticker=%s | range=%s | error=%s",
+                        ticker,
+                        range_name,
+                        exc,
+                    )
+                    continue
+                except PriceCollectionTransientError as exc:
+                    raise PriceBatchTransientError(
+                        f"Transient backfill failure for {ticker}: {exc}"
+                    ) from exc
+
+                for price, timestamp in points:
+                    repo.save_price(ticker=ticker, price=price, timestamp=timestamp)
+                    total_saved += 1
+
+        try:
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            raise PriceBatchTransientError(
+                f"Failed to commit backfill prices: {exc}"
+            ) from exc
+
+        logger.info(
+            "Backfill completed | tickers=%s | range=%s | points_saved=%d",
+            tickers,
+            range_name,
+            total_saved,
+        )
+    except ValueError as exc:
+        session.rollback()
+        raise PriceBatchPermanentError(
+            f"Unsupported backfill range {range_name}: {exc}"
         ) from exc
     finally:
         session.close()

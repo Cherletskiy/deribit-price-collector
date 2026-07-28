@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
+from collector.client import IndexChartRange
 from collector.exceptions import (
     DeribitRequestError,
     DeribitResponseError,
@@ -11,7 +12,12 @@ from collector.exceptions import (
     PriceBatchTransientError,
     UnsupportedTickerError,
 )
-from collector.tasks import SyncDeribitClient, chunked, fetch_price_batch
+from collector.tasks import (
+    SyncDeribitClient,
+    backfill_price_history,
+    chunked,
+    fetch_price_batch,
+)
 
 
 class TestSyncDeribitClient:
@@ -76,6 +82,39 @@ class TestSyncDeribitClient:
 
             with pytest.raises(DeribitResponseError):
                 client.get_index_price_time("btc_usd")
+
+    def test_get_index_chart_data_parses_response(self):
+        mock_http_client = Mock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "result": [
+                [1_609_459_200_000, "50000.00"],
+                [1_609_545_600_000, "51000.00"],
+            ]
+        }
+        mock_http_client.get.return_value = mock_response
+
+        client = SyncDeribitClient(mock_http_client)
+
+        points = client.get_index_chart_data("btc_usd", IndexChartRange.ONE_DAY)
+
+        assert points == [
+            (Decimal("50000.00"), 1_609_459_200),
+            (Decimal("51000.00"), 1_609_545_600),
+        ]
+
+    def test_get_index_chart_data_raises_on_malformed_response(self):
+        mock_http_client = Mock()
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": [["bad"]]}
+        mock_http_client.get.return_value = mock_response
+
+        client = SyncDeribitClient(mock_http_client)
+
+        with pytest.raises(DeribitResponseError):
+            client.get_index_chart_data("btc_usd", IndexChartRange.ONE_DAY)
 
 
 class TestFetchPriceBatch:
@@ -255,6 +294,71 @@ class TestFetchPriceBatch:
                 mock_repo.save_price.assert_called_once()
                 mock_session.rollback.assert_called_once()
                 mock_session.commit.assert_called_once()
+                mock_session.close.assert_called_once()
+
+    def test_backfill_price_history_success(self):
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+            mock_client = Mock()
+            mock_client.get_index_chart_data.return_value = [
+                (Decimal("50000.00"), 1_609_459_200),
+                (Decimal("51000.00"), 1_609_545_600),
+            ]
+            MockClient.return_value = mock_client
+
+            mock_session = Mock()
+            mock_repo = Mock()
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
+                mock_http_client = Mock()
+                MockHttpClient.return_value.__enter__.return_value = mock_http_client
+
+                backfill_price_history(["btc_usd"], "1d")
+
+                assert mock_repo.save_price.call_count == 2
+                mock_session.commit.assert_called_once()
+                mock_session.rollback.assert_not_called()
+                mock_session.close.assert_called_once()
+
+    def test_backfill_price_history_invalid_range(self):
+        mock_session = Mock()
+        with patch("collector.tasks.SyncSessionLocal", return_value=mock_session):
+            with pytest.raises(
+                PriceBatchPermanentError,
+                match="Unsupported backfill range",
+            ):
+                backfill_price_history(["btc_usd"], "10d")
+
+            mock_session.rollback.assert_called_once()
+            mock_session.close.assert_called_once()
+
+    def test_backfill_price_history_transient_failure(self):
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+            mock_client = Mock()
+            mock_client.get_index_chart_data.side_effect = DeribitRequestError(
+                "network"
+            )
+            MockClient.return_value = mock_client
+
+            mock_session = Mock()
+            mock_repo = Mock()
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
+                mock_http_client = Mock()
+                MockHttpClient.return_value.__enter__.return_value = mock_http_client
+
+                with pytest.raises(
+                    PriceBatchTransientError,
+                    match="Transient backfill failure",
+                ):
+                    backfill_price_history(["btc_usd"], "1d")
+
+                mock_repo.save_price.assert_not_called()
                 mock_session.close.assert_called_once()
 
 

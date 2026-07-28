@@ -1,4 +1,5 @@
 from decimal import Decimal
+from enum import StrEnum
 
 import httpx
 
@@ -11,6 +12,15 @@ from collector.exceptions import (
 )
 
 logger = setup_logger(__name__)
+
+
+class IndexChartRange(StrEnum):
+    ONE_HOUR = "1h"
+    ONE_DAY = "1d"
+    TWO_DAYS = "2d"
+    ONE_MONTH = "1m"
+    ONE_YEAR = "1y"
+    ALL = "all"
 
 
 class SyncDeribitClient:
@@ -80,6 +90,84 @@ class SyncDeribitClient:
             logger.error(
                 "Response parsing error | ticker=%s | error=%s",
                 ticker,
+                exc,
+            )
+            raise
+
+    def get_index_chart_data(
+        self,
+        ticker: str,
+        range_name: IndexChartRange,
+    ) -> list[tuple[Decimal, int]]:
+        if ticker not in config.supported_tickers_set:
+            raise UnsupportedTickerError(
+                "Unsupported ticker: "
+                f"{ticker}. Must be one of: {list(config.supported_tickers)}"
+            )
+
+        url = f"{self.BASE_URL}/public/get_index_chart_data"
+        params = {
+            "index_name": ticker,
+            "range": range_name.value,
+        }
+
+        try:
+            response = self._client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            logger.info(
+                "GET %s | ticker=%s | range=%s | status=%s",
+                url,
+                ticker,
+                range_name.value,
+                response.status_code,
+            )
+
+            result = data.get("result")
+            if result is None or not isinstance(result, list):
+                raise DeribitResponseError(
+                    f"Missing or invalid 'result' field in API response: {data}"
+                )
+
+            parsed_points: list[tuple[Decimal, int]] = []
+            for item in result:
+                if not isinstance(item, list | tuple) or len(item) != 2:
+                    raise DeribitResponseError(
+                        f"Invalid chart data point in API response: {item}"
+                    )
+
+                timestamp_ms, price = item
+                if not isinstance(timestamp_ms, int | float):
+                    raise DeribitResponseError(
+                        f"Invalid chart data timestamp in API response: {item}"
+                    )
+
+                parsed_points.append(
+                    (
+                        Decimal(str(price)),
+                        int(timestamp_ms) // 1000,
+                    )
+                )
+
+            return parsed_points
+
+        except httpx.HTTPError as exc:
+            logger.error(
+                "HTTP error fetching chart data | ticker=%s | range=%s | error=%s",
+                ticker,
+                range_name.value,
+                exc,
+            )
+            raise DeribitRequestError(
+                "Failed to fetch chart data from Deribit "
+                f"for {ticker} with range {range_name.value}: {exc}"
+            ) from exc
+        except DeribitResponseError as exc:
+            logger.error(
+                "Chart response parsing error | ticker=%s | range=%s | error=%s",
+                ticker,
+                range_name.value,
                 exc,
             )
             raise

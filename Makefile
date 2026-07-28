@@ -1,6 +1,6 @@
 PYTHON := uv run
 
-.PHONY: setup format lint typecheck test check
+.PHONY: setup format lint typecheck test check backfill
 
 setup:
 	uv sync --group dev
@@ -22,3 +22,6 @@ check:
 	$(PYTHON) ruff check .
 	$(PYTHON) mypy
 	$(PYTHON) pytest --cov
+
+backfill:
+	$(PYTHON) -m collector.backfill --range $(RANGE)
