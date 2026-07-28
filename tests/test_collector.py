@@ -4,6 +4,13 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
+from collector.exceptions import (
+    DeribitRequestError,
+    DeribitResponseError,
+    PriceBatchPermanentError,
+    PriceBatchTransientError,
+    UnsupportedTickerError,
+)
 from collector.tasks import SyncDeribitClient, chunked, fetch_price_batch
 
 
@@ -37,28 +44,25 @@ class TestSyncDeribitClient:
         )
 
     def test_raises_on_invalid_ticker(self):
-        """Клиент выбрасывает ValueError для неподдерживаемого тикера"""
         mock_http_client = Mock()
         client = SyncDeribitClient(mock_http_client)
 
-        with pytest.raises(ValueError, match="Unsupported ticker"):
+        with pytest.raises(UnsupportedTickerError, match="Unsupported ticker"):
             client.get_index_price_time("invalid_ticker")
 
     def test_raises_on_http_error(self):
-        """Клиент пробрасывает HTTP ошибки"""
         mock_http_client = Mock()
         mock_http_client.get.side_effect = httpx.HTTPError("Network error")
         client = SyncDeribitClient(mock_http_client)
 
-        with pytest.raises(httpx.HTTPError):
+        with pytest.raises(DeribitRequestError, match="Failed to fetch price"):
             client.get_index_price_time("btc_usd")
 
     def test_raises_on_malformed_response(self):
-        """Клиент выбрасывает ValueError при некорректном ответе API"""
         test_cases = [
-            {"usIn": 123},  # нет result
-            {"result": {}},  # нет index_price
-            {"result": {"index_price": "100"}, "usIn": None},  # нет usIn
+            {"usIn": 123},
+            {"result": {}},
+            {"result": {"index_price": "100"}, "usIn": None},
         ]
 
         for response_data in test_cases:
@@ -70,13 +74,12 @@ class TestSyncDeribitClient:
 
             client = SyncDeribitClient(mock_http_client)
 
-            with pytest.raises(ValueError):
+            with pytest.raises(DeribitResponseError):
                 client.get_index_price_time("btc_usd")
 
 
 class TestFetchPriceBatch:
     def test_fetch_price_batch_all_success(self):
-        """Все тикеры успешно обработаны"""
         with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = [
@@ -92,18 +95,15 @@ class TestFetchPriceBatch:
                 patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
                 patch("collector.tasks.httpx.Client") as MockHttpClient,
             ):
-                # Мокаем httpx.Client контекстный менеджер
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
                 fetch_price_batch(["btc_usd", "eth_usd"])
 
-                # Проверяем:
                 assert mock_client.get_index_price_time.call_count == 2
                 assert mock_repo.save_price.call_count == 2
                 mock_session.commit.assert_called_once()
                 mock_session.rollback.assert_not_called()
-                # Проверяем что сессия закрылась
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_partial_success(self):
@@ -111,7 +111,7 @@ class TestFetchPriceBatch:
             mock_client = Mock()
             mock_client.get_index_price_time.side_effect = [
                 (Decimal("50000"), 1234567890),
-                Exception("API error"),
+                DeribitRequestError("API error"),
             ]
             MockClient.return_value = mock_client
 
@@ -122,7 +122,6 @@ class TestFetchPriceBatch:
                 patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
                 patch("collector.tasks.httpx.Client") as MockHttpClient,
             ):
-                # Мокаем httpx.Client
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
@@ -134,6 +133,66 @@ class TestFetchPriceBatch:
                 )
                 mock_session.commit.assert_called_once()
                 mock_session.rollback.assert_not_called()
+                mock_session.close.assert_called_once()
+
+    def test_fetch_price_batch_all_transient_failures(self):
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+            mock_client = Mock()
+            mock_client.get_index_price_time.side_effect = DeribitRequestError(
+                "API down"
+            )
+            MockClient.return_value = mock_client
+
+            mock_session = Mock()
+            mock_repo = Mock()
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
+                mock_http_client = Mock()
+                MockHttpClient.return_value.__enter__.return_value = mock_http_client
+
+                with pytest.raises(
+                    PriceBatchTransientError,
+                    match="Transient batch failure",
+                ):
+                    fetch_price_batch(["btc_usd", "eth_usd"])
+
+                assert mock_client.get_index_price_time.call_count == 2
+                mock_repo.save_price.assert_not_called()
+                mock_session.rollback.assert_called_once()
+                mock_session.commit.assert_not_called()
+                mock_session.close.assert_called_once()
+
+    def test_fetch_price_batch_all_permanent_failures(self):
+        with patch("collector.tasks.SyncDeribitClient") as MockClient:
+            mock_client = Mock()
+            mock_client.get_index_price_time.side_effect = UnsupportedTickerError(
+                "Unsupported ticker"
+            )
+            MockClient.return_value = mock_client
+
+            mock_session = Mock()
+            mock_repo = Mock()
+            with (
+                patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
+                patch("collector.tasks.SyncPriceRepository", return_value=mock_repo),
+                patch("collector.tasks.httpx.Client") as MockHttpClient,
+            ):
+                mock_http_client = Mock()
+                MockHttpClient.return_value.__enter__.return_value = mock_http_client
+
+                with pytest.raises(
+                    PriceBatchPermanentError,
+                    match="Permanent batch failure",
+                ):
+                    fetch_price_batch(["btc_usd", "eth_usd"])
+
+                assert mock_client.get_index_price_time.call_count == 2
+                mock_repo.save_price.assert_not_called()
+                mock_session.rollback.assert_called_once()
+                mock_session.commit.assert_not_called()
                 mock_session.close.assert_called_once()
 
     def test_fetch_price_batch_updates_existing_price(self):
@@ -169,13 +228,17 @@ class TestFetchPriceBatch:
                 mock_session.rollback.assert_not_called()
                 mock_session.close.assert_called_once()
 
-    def test_fetch_price_batch_all_failed(self):
+    def test_fetch_price_batch_commit_failure_raises_transient_error(self):
         with patch("collector.tasks.SyncDeribitClient") as MockClient:
             mock_client = Mock()
-            mock_client.get_index_price_time.side_effect = Exception("API down")
+            mock_client.get_index_price_time.return_value = (
+                Decimal("51000"),
+                1234567890,
+            )
             MockClient.return_value = mock_client
 
             mock_session = Mock()
+            mock_session.commit.side_effect = RuntimeError("db unavailable")
             mock_repo = Mock()
             with (
                 patch("collector.tasks.SyncSessionLocal", return_value=mock_session),
@@ -185,13 +248,13 @@ class TestFetchPriceBatch:
                 mock_http_client = Mock()
                 MockHttpClient.return_value.__enter__.return_value = mock_http_client
 
-                with pytest.raises(Exception, match="All tickers failed"):
-                    fetch_price_batch(["btc_usd", "eth_usd"])
+                with pytest.raises(PriceBatchTransientError, match="Failed to commit"):
+                    fetch_price_batch(["btc_usd"])
 
-                assert mock_client.get_index_price_time.call_count == 2
-                mock_repo.save_price.assert_not_called()
+                assert mock_client.get_index_price_time.call_count == 1
+                mock_repo.save_price.assert_called_once()
                 mock_session.rollback.assert_called_once()
-                mock_session.commit.assert_not_called()
+                mock_session.commit.assert_called_once()
                 mock_session.close.assert_called_once()
 
 

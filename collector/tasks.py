@@ -9,6 +9,12 @@ from app.core.db import SyncSessionLocal
 from app.core.logging_config import setup_logger
 from app.repositories import SyncPriceRepository
 from collector.client import SyncDeribitClient
+from collector.exceptions import (
+    PriceBatchPermanentError,
+    PriceBatchTransientError,
+    PriceCollectionPermanentError,
+    PriceCollectionTransientError,
+)
 
 logger = setup_logger(__name__)
 
@@ -61,26 +67,25 @@ def dispatch_price_batches() -> None:
 
 
 @celery_app.task(
-    autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 5},
+    autoretry_for=(PriceBatchTransientError,),
+    retry_backoff=True,
+    retry_backoff_max=60,
+    retry_jitter=True,
+    retry_kwargs={"max_retries": 3},
     expires=50,
     name="collector.tasks.fetch_price_batch",
 )
 def fetch_price_batch(tickers: list[str]) -> None:
-    """
-    Обработка одного батча тикеров.
-    Использует один HTTP-клиент на весь батч для connection pooling.
-    """
     logger.info("Starting price batch | size=%d", len(tickers))
 
     session = SyncSessionLocal()
     success_count = 0
-    failed_tickers = []
+    permanent_failures: list[tuple[str, str]] = []
+    transient_failures: list[tuple[str, str]] = []
 
     try:
         repo = SyncPriceRepository(session)
 
-        # Один HTTP-клиент на весь batch для connection pooling
         with httpx.Client(timeout=config.DERIBIT_API_TIMEOUT_SEC) as http_client:
             client = SyncDeribitClient(http_client)
 
@@ -96,31 +101,63 @@ def fetch_price_batch(tickers: list[str]) -> None:
                         price,
                         timestamp,
                     )
-
-                except Exception as exc:
-                    failed_tickers.append((ticker, str(exc)))
+                except PriceCollectionPermanentError as exc:
+                    permanent_failures.append((ticker, str(exc)))
                     logger.error(
-                        "Failed to process ticker | ticker=%s | error=%s",
+                        "Permanent failure processing ticker | ticker=%s | error=%s",
+                        ticker,
+                        exc,
+                    )
+                except PriceCollectionTransientError as exc:
+                    transient_failures.append((ticker, str(exc)))
+                    logger.error(
+                        "Transient failure processing ticker | ticker=%s | error=%s",
                         ticker,
                         exc,
                     )
 
-        # Commit только если есть успешные сохранения
         if success_count > 0:
-            session.commit()
+            try:
+                session.commit()
+            except Exception as exc:
+                session.rollback()
+                raise PriceBatchTransientError(
+                    f"Failed to commit collected prices: {exc}"
+                ) from exc
             logger.info(
-                "Batch completed | success=%d | failed=%d | failed_tickers=%s",
+                (
+                    "Batch completed | success=%d | permanent_failed=%d "
+                    "| transient_failed=%d"
+                ),
                 success_count,
-                len(failed_tickers),
-                [t[0] for t in failed_tickers],
+                len(permanent_failures),
+                len(transient_failures),
             )
         else:
             session.rollback()
-            logger.warning("All tickers failed | tickers=%s", tickers)
-            raise Exception(f"All tickers failed: {[t[0] for t in failed_tickers]}")
+            failed_tickers = [
+                ticker for ticker, _ in permanent_failures + transient_failures
+            ]
+            logger.warning("All tickers failed | tickers=%s", failed_tickers)
+            if transient_failures:
+                raise PriceBatchTransientError(
+                    f"Transient batch failure for tickers: {failed_tickers}"
+                )
+            raise PriceBatchPermanentError(
+                f"Permanent batch failure for tickers: {failed_tickers}"
+            )
 
-    except Exception:
-        logger.exception("Batch failed | tickers=%s", tickers)
+    except PriceBatchTransientError:
+        logger.exception("Batch failed with transient error | tickers=%s", tickers)
         raise
+    except PriceBatchPermanentError:
+        logger.exception("Batch failed with permanent error | tickers=%s", tickers)
+        raise
+    except Exception as exc:
+        logger.exception("Batch failed | tickers=%s", tickers)
+        session.rollback()
+        raise PriceBatchTransientError(
+            f"Unexpected batch failure for tickers {tickers}: {exc}"
+        ) from exc
     finally:
         session.close()

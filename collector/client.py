@@ -4,6 +4,11 @@ import httpx
 
 from app.core.config import config
 from app.core.logging_config import setup_logger
+from collector.exceptions import (
+    DeribitRequestError,
+    DeribitResponseError,
+    UnsupportedTickerError,
+)
 
 logger = setup_logger(__name__)
 
@@ -16,7 +21,7 @@ class SyncDeribitClient:
 
     def get_index_price_time(self, ticker: str) -> tuple[Decimal, int]:
         if ticker not in config.supported_tickers_set:
-            raise ValueError(
+            raise UnsupportedTickerError(
                 "Unsupported ticker: "
                 f"{ticker}. Must be one of: {list(config.supported_tickers)}"
             )
@@ -38,15 +43,17 @@ class SyncDeribitClient:
 
             result = data.get("result")
             if result is None:
-                raise ValueError(f"Missing 'result' field in API response: {data}")
+                raise DeribitResponseError(
+                    f"Missing 'result' field in API response: {data}"
+                )
 
             price = result.get("index_price")
             if price is None:
-                raise ValueError(f"Missing 'index_price' in result: {result}")
+                raise DeribitResponseError(f"Missing 'index_price' in result: {result}")
 
             us_in = data.get("usIn")
             if us_in is None:
-                raise ValueError(f"Missing 'usIn' in response: {data}")
+                raise DeribitResponseError(f"Missing 'usIn' in response: {data}")
 
             timestamp = us_in // 1_000_000
             price_decimal = Decimal(str(price))
@@ -66,13 +73,13 @@ class SyncDeribitClient:
                 ticker,
                 exc,
             )
-            raise
-        except (ValueError, KeyError) as exc:
+            raise DeribitRequestError(
+                f"Failed to fetch price from Deribit for {ticker}: {exc}"
+            ) from exc
+        except DeribitResponseError as exc:
             logger.error(
                 "Response parsing error | ticker=%s | error=%s",
                 ticker,
                 exc,
             )
-            raise ValueError(
-                f"Failed to parse API response for {ticker}: {exc}"
-            ) from exc
+            raise
