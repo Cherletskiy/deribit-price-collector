@@ -4,9 +4,6 @@
 prices from Deribit, stores an idempotent history in PostgreSQL, and exposes an
 HTTP API for querying raw prices, candle aggregations, and summary analytics.
 
-The project started as a learning exercise and was refactored into a stronger
-portfolio case focused on reliability, observability, and extensibility.
-
 ## Highlights
 
 - Idempotent price ingestion with unique `(ticker, timestamp)` protection
@@ -305,23 +302,3 @@ uv run pytest
 uv run ruff check .
 uv run mypy .
 ```
-
-## Why this project is stronger than a basic pet project
-
-This codebase is intentionally positioned as a small but production-oriented
-data service rather than a CRUD demo. The main focus areas are:
-
-- reliability under retries and repeated collection
-- recoverability through backfill and reconciliation
-- clear API contracts and operational visibility
-- architecture that can grow from one provider to multiple exchanges
-
-## Next steps
-
-Potential future upgrades:
-
-- additional market data providers
-- database-side analytical aggregations
-- Prometheus/Grafana dashboards
-- reconciliation outcome counters and alerts
-- full end-to-end integration environment
