@@ -6,12 +6,39 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.db import get_async_session
+from app.core.metrics import runtime_metrics
 from app.main import app
 from app.repositories import SortOrder
 from app.schemas import PriceResponse
 
 
 class TestEndpoints:
+    def test_healthcheck(self, client_direct_mock):
+        response = client_direct_mock.get("/api/v1/healthz")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    def test_readiness_check(self, client_direct_mock):
+        with patch("app.api.endpoints.ping_db", return_value=None) as mock_ping_db:
+            response = client_direct_mock.get("/api/v1/readyz")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ready"}
+        mock_ping_db.assert_called_once_with()
+
+    def test_runtime_metrics(self, client_direct_mock):
+        before_total = runtime_metrics.snapshot()["requests_total"]
+
+        response = client_direct_mock.get("/api/v1/metrics")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "requests_total" in data
+        assert "requests_failed" in data
+        assert "path_counts" in data
+        assert data["requests_total"] >= before_total
+
     def test_get_supported_instruments(self, client_direct_mock):
         response = client_direct_mock.get("/api/v1/instruments")
 

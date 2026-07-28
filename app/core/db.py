@@ -42,12 +42,16 @@ Base = declarative_base()
 async def init_db():
     logger.info("Initializing database connection")
     try:
-        async with async_engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        await ping_db()
         logger.info("Database connection OK")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         raise
+
+
+async def ping_db() -> None:
+    async with async_engine.connect() as conn:
+        await conn.execute(text("SELECT 1"))
 
 
 async def close_db():

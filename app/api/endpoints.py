@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import config
-from app.core.db import get_async_session
+from app.core.db import get_async_session, ping_db
+from app.core.metrics import runtime_metrics
 from app.repositories import AsyncPriceRepository
 from app.schemas import (
     PriceByDateQuery,
@@ -13,6 +14,22 @@ from app.schemas import (
 from app.services import PriceService
 
 router = APIRouter(prefix="/api/v1", tags=["prices"])
+
+
+@router.get("/healthz")
+async def healthcheck() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.get("/readyz")
+async def readiness_check() -> dict[str, str]:
+    await ping_db()
+    return {"status": "ready"}
+
+
+@router.get("/metrics")
+async def get_runtime_metrics() -> dict[str, object]:
+    return runtime_metrics.snapshot()
 
 
 @router.get("/instruments")

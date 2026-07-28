@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from time import perf_counter
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -7,6 +8,7 @@ from pydantic_core import ValidationError
 from app.api.endpoints import router
 from app.core.db import close_db, init_db
 from app.core.logging_config import setup_logger
+from app.core.metrics import runtime_metrics
 
 logger = setup_logger(__name__)
 
@@ -33,6 +35,23 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def collect_runtime_metrics(request: Request, call_next):
+    path = request.url.path
+    runtime_metrics.on_request_start(path)
+    started_at = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        duration_ms = (perf_counter() - started_at) * 1000
+        runtime_metrics.on_request_end(path, 500, duration_ms)
+        raise
+
+    duration_ms = (perf_counter() - started_at) * 1000
+    runtime_metrics.on_request_end(path, response.status_code, duration_ms)
+    return response
 
 
 @app.exception_handler(ValidationError)
