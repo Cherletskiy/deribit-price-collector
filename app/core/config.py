@@ -27,8 +27,16 @@ class Config(BaseSettings):
     LOG_JSON: bool = Field(default=False)
 
     @property
-    def DATABASE_URL(self) -> str:
+    def DATABASE_ASYNC_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    @property
+    def DATABASE_SYNC_URL(self) -> str:
+        return f"postgresql+psycopg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return self.DATABASE_ASYNC_URL
 
     @property
     def REDIS_URL(self) -> str:
